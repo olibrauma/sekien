@@ -51,7 +51,14 @@ fn main() -> Result<(), Box<dyn Error>> {
     }
 
     // Mermaid → SVG (stdout)
-    let file_path = args.iter().find(|a| !a.starts_with('-')).map(|s| s.as_str());
+    let files: Vec<&str> = args.iter().filter(|a| !a.starts_with('-')).map(|s| s.as_str()).collect();
+    if files.len() > 1 {
+        eprintln!("error: too many arguments (mmsvg takes at most one file)");
+        eprintln!("hint:  for multiple files, use a shell loop:");
+        eprintln!("         for f in *.mmd; do mmsvg \"$f\" > \"${{f%.mmd}}.svg\"; done");
+        std::process::exit(1);
+    }
+    let file_path = files.into_iter().next();
     let code = read_mermaid(file_path)?;
     let svgs = renderer::render_all(vec![code])?;
     print!("{}", svgs[0]);
