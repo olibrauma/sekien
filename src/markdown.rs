@@ -2,6 +2,7 @@ use crate::renderer::render_all;
 use std::env;
 use std::error::Error;
 use std::fs;
+use std::path::Path;
 
 // ```mermaid\n...\n``` にマッチ
 const FENCE_OPEN: &str = "```mermaid\n";
@@ -38,7 +39,10 @@ fn extract_blocks(input: &str) -> Vec<MermaidBlock> {
     blocks
 }
 
-pub fn transform(input: &str) -> Result<String, Box<dyn Error>> {
+// input_path: ファイル入力の場合は Some。SVG の置き場所と参照パスの形式を決める。
+// - Some(path): 入力 .md の隣に {stem}-{i}.svg を書き出し、相対パスで参照 (mmdc 互換)
+// - None (stdin): temp dir に書き出し、絶対パスで参照
+pub fn transform(input: &str, input_path: Option<&Path>) -> Result<String, Box<dyn Error>> {
     let blocks = extract_blocks(input);
     if blocks.is_empty() {
         return Ok(input.to_string());
@@ -47,26 +51,40 @@ pub fn transform(input: &str) -> Result<String, Box<dyn Error>> {
     let codes: Vec<String> = blocks.iter().map(|b| b.code.clone()).collect();
     let svgs = render_all(codes)?;
 
-    // SVG をファイルに書き出す
-    let pid = std::process::id();
-    let tmp = env::temp_dir();
-    let svg_paths: Vec<_> = svgs
-        .iter()
-        .enumerate()
-        .map(|(i, svg)| {
-            let path = tmp.join(format!("mmsvg_{}_{}.svg", pid, i));
-            fs::write(&path, svg)?;
-            Ok::<_, Box<dyn Error>>(path)
-        })
-        .collect::<Result<Vec<_>, _>>()?;
+    // SVG ファイルの書き出し先と参照パスを決定
+    let svg_refs: Vec<(std::path::PathBuf, String)> = match input_path {
+        Some(p) => {
+            let dir = p.parent().unwrap_or(Path::new("."));
+            let stem = p.file_stem().unwrap_or_default().to_string_lossy();
+            svgs.iter()
+                .enumerate()
+                .map(|(i, svg)| {
+                    let name = format!("{}-{}.svg", stem, i);
+                    let abs = dir.join(&name);
+                    fs::write(&abs, svg)?;
+                    Ok::<_, Box<dyn Error>>((abs, name))
+                })
+                .collect::<Result<Vec<_>, _>>()?
+        }
+        None => {
+            let pid = std::process::id();
+            let tmp = env::temp_dir();
+            svgs.iter()
+                .enumerate()
+                .map(|(i, svg)| {
+                    let abs = tmp.join(format!("mmsvg_{}_{}.svg", pid, i));
+                    fs::write(&abs, svg)?;
+                    let ref_str = abs.to_string_lossy().into_owned();
+                    Ok::<_, Box<dyn Error>>((abs, ref_str))
+                })
+                .collect::<Result<Vec<_>, _>>()?
+        }
+    };
 
     // 後ろから置換することで文字位置がずれない
     let mut output = input.to_string();
-    for (block, path) in blocks.iter().zip(svg_paths.iter()).rev() {
-        output.replace_range(
-            block.start..block.end,
-            &format!("![]({})", path.display()),
-        );
+    for (block, (_, ref_str)) in blocks.iter().zip(svg_refs.iter()).rev() {
+        output.replace_range(block.start..block.end, &format!("![]({})", ref_str));
     }
 
     Ok(output)

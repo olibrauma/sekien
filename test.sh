@@ -42,11 +42,15 @@ else
 fi
 
 # 参照先の SVG ファイルが実在し、tspan を含むこと
+# 相対パスの場合は入力 MD の隣にあるはずなので、そのディレクトリを基準に解決
+MD_DIR="$(dirname "$MD")"
 MISSING=0
 BAD_SVG=0
 while IFS= read -r line; do
   path="${line#*![](}"
   path="${path%%)*}"
+  # 絶対パスでなければ入力 MD のディレクトリを基準に解決
+  [[ "$path" != /* ]] && path="$MD_DIR/$path"
   if [ ! -f "$path" ]; then
     MISSING=$((MISSING + 1))
   elif ! grep -q 'tspan' "$path"; then
