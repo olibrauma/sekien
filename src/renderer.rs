@@ -1,10 +1,11 @@
 use serde_json::Value;
 use std::sync::{Arc, Mutex};
-use wry::WebViewBuilder;
+use wry::{WebView, WebViewBuilder};
 use winit::{
-    event::{Event, WindowEvent},
-    event_loop::{ControlFlow, EventLoop},
-    window::Window,
+    application::ApplicationHandler,
+    event::WindowEvent,
+    event_loop::{ActiveEventLoop, ControlFlow, EventLoop},
+    window::{Window, WindowId},
 };
 
 const MERMAID_JS: &str = include_str!("../assets/mermaid.min.js");
@@ -42,6 +43,92 @@ window.ipc.postMessage(JSON.stringify({{ type: 'ready' }}));
     )
 }
 
+struct App {
+    // IPC バッファ (IPC ハンドラと共有)
+    ipc_buf: Arc<Mutex<Option<String>>>,
+    // 収集した SVG (呼び出し元と共有)
+    results: Arc<Mutex<Vec<String>>>,
+    // レンダリング対象のブロック
+    blocks: Vec<String>,
+    n: usize,
+    current: usize,
+    started: bool,
+    // winit/wry ハンドル (resumed 後に初期化)
+    _window: Option<Window>,
+    webview: Option<WebView>,
+}
+
+impl ApplicationHandler for App {
+    fn resumed(&mut self, event_loop: &ActiveEventLoop) {
+        let window = event_loop
+            .create_window(Window::default_attributes().with_visible(false))
+            .unwrap();
+
+        let ipc_ref = Arc::clone(&self.ipc_buf);
+        let webview = WebViewBuilder::new(&window)
+            .with_html(build_html())
+            .with_ipc_handler(move |req: wry::http::Request<String>| {
+                *ipc_ref.lock().unwrap() = Some(req.into_body());
+            })
+            .build()
+            .unwrap();
+
+        self._window = Some(window);
+        self.webview = Some(webview);
+
+        event_loop.set_control_flow(ControlFlow::Poll);
+    }
+
+    fn window_event(&mut self, event_loop: &ActiveEventLoop, _id: WindowId, event: WindowEvent) {
+        if let WindowEvent::Destroyed = event {
+            event_loop.exit();
+        }
+    }
+
+    // イベントキューが空になるたびに呼ばれる — IPC ポーリングをここで行う
+    fn about_to_wait(&mut self, event_loop: &ActiveEventLoop) {
+        let msg = self.ipc_buf.lock().unwrap().take();
+        let Some(msg) = msg else { return };
+        let Ok(parsed) = serde_json::from_str::<Value>(&msg) else { return };
+
+        let webview = self.webview.as_ref().unwrap();
+
+        match parsed["type"].as_str().unwrap_or("") {
+            "ready" if !self.started => {
+                self.started = true;
+                let js = format!(
+                    "renderMermaid(0, {})",
+                    serde_json::to_string(&self.blocks[0]).unwrap()
+                );
+                let _ = webview.evaluate_script(&js);
+            }
+            "svg" => {
+                let id = parsed["id"].as_u64().unwrap_or(0) as usize;
+                self.results.lock().unwrap()[id] =
+                    parsed["svg"].as_str().unwrap_or("").to_string();
+
+                let next = id + 1;
+                if next < self.n {
+                    self.current = next;
+                    let js = format!(
+                        "renderMermaid({}, {})",
+                        next,
+                        serde_json::to_string(&self.blocks[next]).unwrap()
+                    );
+                    let _ = webview.evaluate_script(&js);
+                } else {
+                    event_loop.exit();
+                }
+            }
+            "error" => {
+                eprintln!("mmsvg: {}", parsed["error"].as_str().unwrap_or("unknown error"));
+                event_loop.exit();
+            }
+            _ => {}
+        }
+    }
+}
+
 pub fn render_all(blocks: Vec<String>) -> Result<Vec<String>, Box<dyn std::error::Error>> {
     if blocks.is_empty() {
         return Ok(vec![]);
@@ -49,77 +136,20 @@ pub fn render_all(blocks: Vec<String>) -> Result<Vec<String>, Box<dyn std::error
 
     let n = blocks.len();
     let results = Arc::new(Mutex::new(vec![String::new(); n]));
-    let results_ref = Arc::clone(&results);
 
-    // IPC で受信したメッセージを一時保管するバッファ
-    let ipc_buf: Arc<Mutex<Option<String>>> = Arc::new(Mutex::new(None));
-    let ipc_buf_ref = Arc::clone(&ipc_buf);
+    let mut app = App {
+        ipc_buf: Arc::new(Mutex::new(None)),
+        results: Arc::clone(&results),
+        blocks,
+        n,
+        current: 0,
+        started: false,
+        _window: None,
+        webview: None,
+    };
 
-    let event_loop = EventLoop::new().unwrap();
+    EventLoop::new()?.run_app(&mut app)?;
 
-    let window = event_loop.create_window(
-        Window::default_attributes().with_visible(false)
-    )?;
-
-    let webview = WebViewBuilder::new(&window)
-        .with_html(build_html())
-        .with_ipc_handler(move |req: wry::http::Request<String>| {
-            *ipc_buf_ref.lock().unwrap() = Some(req.into_body());
-        })
-        .build()?;
-
-    let mut started = false;
-    let mut current = 0usize;
-
-    event_loop.run(move |event, evl| {
-        // IPC メッセージをポーリング
-        evl.set_control_flow(ControlFlow::Poll);
-
-        let msg = ipc_buf.lock().unwrap().take();
-        if let Some(msg) = msg {
-            if let Ok(parsed) = serde_json::from_str::<Value>(&msg) {
-                match parsed["type"].as_str().unwrap_or("") {
-                    "ready" if !started => {
-                        started = true;
-                        let js = format!(
-                            "renderMermaid(0, {})",
-                            serde_json::to_string(&blocks[0]).unwrap()
-                        );
-                        let _ = webview.evaluate_script(&js);
-                    }
-                    "svg" => {
-                        let id = parsed["id"].as_u64().unwrap_or(0) as usize;
-                        results_ref.lock().unwrap()[id] =
-                            parsed["svg"].as_str().unwrap_or("").to_string();
-
-                        current = id + 1;
-                        if current < n {
-                            let js = format!(
-                                "renderMermaid({}, {})",
-                                current,
-                                serde_json::to_string(&blocks[current]).unwrap()
-                            );
-                            let _ = webview.evaluate_script(&js);
-                        } else {
-                            evl.exit();
-                        }
-                    }
-                    "error" => {
-                        eprintln!(
-                            "mmsvg: {}",
-                            parsed["error"].as_str().unwrap_or("unknown error")
-                        );
-                        evl.exit();
-                    }
-                    _ => {}
-                }
-            }
-        }
-
-        if let Event::WindowEvent { event: WindowEvent::Destroyed, .. } = event {
-            evl.exit();
-        }
-    })?;
-
-    Ok(Arc::try_unwrap(results).unwrap().into_inner().unwrap())
+    let svgs = results.lock().unwrap().clone();
+    Ok(svgs)
 }
