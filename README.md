@@ -1,25 +1,44 @@
 # mmsvg
 
-Mermaid コードブロックを SVG に変換する CLI ツール。
+Mermaid コードを SVG に変換する CLI ツール。
 
 - OS ネイティブの WebView (macOS: WKWebView) を使用するため、Chromium のバンドルが不要
-- Markdown in / Markdown out のフィルタとして動作
-- Pandoc の `--filter` オプションにも対応
+- Pandoc の `--filter` オプションに対応
 
 ## 使い方
 
 ```bash
-# Markdown ファイルを変換 (Mermaid ブロックが SVG に置換される)
-mmsvg input.md > output.md
+# .mmd ファイル → SVG (stdout)
+mmsvg diagram.mmd > diagram.svg
 
-# stdin から読む
-cat input.md | mmsvg > output.md
+# stdin → SVG (stdout)
+cat diagram.mmd | mmsvg > diagram.svg
 
-# Pandoc filter として使う
-pandoc input.md -o output.pdf --filter mmsvg --pandoc-filter --pdf-engine=typst
+# Pandoc filter として使う (HTML 出力に SVG がインラインで埋め込まれる)
+pandoc input.md -o output.html --filter mmsvg
+```
 
-# Pandoc とパイプで繋ぐ
-cat input.md | mmsvg | pandoc -f markdown -o output.pdf --pdf-engine=typst
+### 注意: ファイル名に拡張子をつけること
+
+mmsvg は引数がファイルパス (`.` を含む) かどうかで動作モードを切り替える。
+`.mmd` などの拡張子なしでファイルを渡すと、誤って Pandoc filter モードと判定される。
+
+```bash
+mmsvg diagram      # NG: filter モードと判定される
+mmsvg diagram.mmd  # OK
+```
+
+### 対応 PDF engine
+
+| PDF engine | 動作 |
+|---|---|
+| `weasyprint` | ✓ (HTML 経由) |
+| `wkhtmltopdf` | ✓ (HTML 経由) |
+| `pdflatex` / `xelatex` | ✗ (raw HTML を drop) |
+| `typst` | ✗ (raw HTML を drop) |
+
+```bash
+pandoc input.md -o output.pdf --filter mmsvg --pdf-engine=weasyprint
 ```
 
 ## ビルド
@@ -42,7 +61,6 @@ mmsvg/
 └── src/
     ├── main.rs              # エントリポイント・CLI 引数処理
     ├── renderer.rs          # WebView レンダラ (コア)
-    ├── markdown.rs          # Markdown transformer
     └── pandoc.rs            # Pandoc filter
 ```
 
@@ -70,13 +88,7 @@ render_all(blocks) の流れ:
 ```
 
 IPC メッセージは `Arc<Mutex<Option<String>>>` を介してやり取りし、
-イベントループを `ControlFlow::Poll` で回してポーリングする。
-
-### markdown.rs
-
-入力 Markdown から ` ```mermaid ... ``` ` ブロックを検出し、
-`renderer::render_all` で SVG に変換したあと元の位置に差し替える。
-後ろから置換することで文字位置のずれを防ぐ。
+`ControlFlow::Poll` でポーリングする。
 
 ### pandoc.rs
 
@@ -86,15 +98,11 @@ stdin の Pandoc AST JSON を受け取り、
 
 ```json
 // 変換前
-{ "t": "CodeBlock", "c": [["", ["mermaid"], []], "erDiagram ..."] }
+{ "t": "CodeBlock", "c": [["", ["mermaid"], []], "graph LR ..."] }
 
 // 変換後
 { "t": "RawBlock", "c": ["html", "<svg ...>...</svg>"] }
 ```
 
-## 今後の課題
-
-- `ControlFlow::Poll` によるポーリングを廃止し、
-  winit 0.30 の `run_app` + `ApplicationHandler` を使った
-  イベント駆動型に移行する
-- `cargo install` でインストールできるように `assets/` の扱いを整理する
+pandoc は filter を `mmsvg <output-format>` として呼び出す。
+引数が `.` を含まない単語の場合は Pandoc filter モードと判定する。
