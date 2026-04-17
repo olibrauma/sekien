@@ -48,6 +48,8 @@ struct App {
     ipc_buf: Arc<Mutex<Option<String>>>,
     // 収集した SVG (呼び出し元と共有)
     results: Arc<Mutex<Vec<String>>>,
+    // レンダリングエラー (呼び出し元と共有)
+    error: Arc<Mutex<Option<String>>>,
     // レンダリング対象のブロック
     blocks: Vec<String>,
     n: usize,
@@ -121,7 +123,8 @@ impl ApplicationHandler for App {
                 }
             }
             "error" => {
-                eprintln!("mmsvg: {}", parsed["error"].as_str().unwrap_or("unknown error"));
+                let msg = parsed["error"].as_str().unwrap_or("unknown error").to_string();
+                *self.error.lock().unwrap() = Some(msg);
                 event_loop.exit();
             }
             _ => {}
@@ -136,10 +139,12 @@ pub fn render_all(blocks: Vec<String>) -> Result<Vec<String>, Box<dyn std::error
 
     let n = blocks.len();
     let results = Arc::new(Mutex::new(vec![String::new(); n]));
+    let error = Arc::new(Mutex::new(None::<String>));
 
     let mut app = App {
         ipc_buf: Arc::new(Mutex::new(None)),
         results: Arc::clone(&results),
+        error: Arc::clone(&error),
         blocks,
         n,
         current: 0,
@@ -149,6 +154,10 @@ pub fn render_all(blocks: Vec<String>) -> Result<Vec<String>, Box<dyn std::error
     };
 
     EventLoop::new()?.run_app(&mut app)?;
+
+    if let Some(msg) = error.lock().unwrap().take() {
+        return Err(msg.into());
+    }
 
     let svgs = results.lock().unwrap().clone();
     Ok(svgs)
