@@ -53,8 +53,7 @@ fn main() -> Result<(), Box<dyn Error>> {
     let output = if is_pandoc_filter {
         pandoc::filter(&input)?
     } else {
-        let path = file_path.map(std::path::Path::new);
-        markdown::transform(&input, path)?
+        markdown::transform(&input)?
     };
 
     print!("{}", output);
