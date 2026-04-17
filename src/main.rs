@@ -9,6 +9,7 @@ use std::io::{self, Read};
 fn usage() -> &'static str {
     "Usage:
   mmsvg [file.md]           Markdown in → Markdown out (Mermaid → SVG)
+  mmsvg diagram.mmd         Mermaid → diagram.svg
   mmsvg --pandoc-filter     Pandoc AST JSON in → AST JSON out
   cat file.md | mmsvg"
 }
@@ -34,6 +35,18 @@ fn main() -> Result<(), Box<dyn Error>> {
 
     let is_pandoc_filter = args.iter().any(|a| a == "--pandoc-filter");
     let file_path = args.iter().find(|a| !a.starts_with('-')).map(|s| s.as_str());
+
+    // .mmd ファイル: diagram.mmd → diagram.svg
+    if let Some(p) = file_path {
+        if p.ends_with(".mmd") {
+            let code = fs::read_to_string(p)?;
+            let svgs = renderer::render_all(vec![code])?;
+            let out_path = p.trim_end_matches(".mmd").to_string() + ".svg";
+            fs::write(&out_path, &svgs[0])?;
+            eprintln!("mmsvg: wrote {}", out_path);
+            return Ok(());
+        }
+    }
 
     let input = read_input(file_path)?;
 

@@ -23,7 +23,7 @@ echo "[0] 前提確認"
 echo ""
 
 # --- テスト 1: Markdown 変換 ---
-echo "[1] Markdown → Markdown (Mermaid → SVG)"
+echo "[1] Markdown → Markdown (Mermaid → SVG files)"
 "$BINARY" "$MD" > "$OUT_MD" 2>/dev/null
 
 # Mermaid ブロックが残っていないこと
@@ -33,19 +33,36 @@ else
   pass "no mermaid blocks in output"
 fi
 
-# SVG が期待数 (3) 含まれること
-SVG_COUNT=$(grep -c '<svg' "$OUT_MD" || true)
-if [ "$SVG_COUNT" -eq 3 ]; then
-  pass "SVG count = 3"
+# SVG ファイル参照が期待数 (3) 含まれること
+IMG_COUNT=$(grep -c '!\[\](' "$OUT_MD" || true)
+if [ "$IMG_COUNT" -eq 3 ]; then
+  pass "image references count = 3"
 else
-  fail "SVG count = $SVG_COUNT (expected 3)"
+  fail "image references count = $IMG_COUNT (expected 3)"
 fi
 
-# 日本語テキストが SVG に含まれること
-if grep -q 'tspan' "$OUT_MD"; then
-  pass "SVG contains tspan (text rendered)"
+# 参照先の SVG ファイルが実在し、tspan を含むこと
+MISSING=0
+BAD_SVG=0
+while IFS= read -r line; do
+  path="${line#*![](}"
+  path="${path%%)*}"
+  if [ ! -f "$path" ]; then
+    MISSING=$((MISSING + 1))
+  elif ! grep -q 'tspan' "$path"; then
+    BAD_SVG=$((BAD_SVG + 1))
+  fi
+done < <(grep '!\[\](' "$OUT_MD")
+
+if [ "$MISSING" -eq 0 ]; then
+  pass "all SVG files exist"
 else
-  fail "no tspan in SVG — text may be missing"
+  fail "$MISSING SVG file(s) not found"
+fi
+if [ "$BAD_SVG" -eq 0 ]; then
+  pass "SVG files contain tspan (text rendered)"
+else
+  fail "$BAD_SVG SVG file(s) missing tspan"
 fi
 echo ""
 
@@ -62,7 +79,7 @@ else
   if [ -f "$OUT_PDF" ] && [ -s "$OUT_PDF" ]; then
     pass "PDF generated: $OUT_PDF"
 
-    # ファイルサイズを期待 PDF と比較 (10% 以内の差を許容)
+    # ファイルサイズを期待 PDF と比較 (50〜200% を許容)
     EXPECTED_SIZE=$(wc -c < "$EXPECTED_PDF")
     ACTUAL_SIZE=$(wc -c < "$OUT_PDF")
     RATIO=$(echo "scale=2; $ACTUAL_SIZE * 100 / $EXPECTED_SIZE" | bc)
@@ -70,6 +87,20 @@ else
       pass "PDF size ratio vs expected = ${RATIO}%"
     else
       fail "PDF size ratio vs expected = ${RATIO}% (out of range)"
+    fi
+
+    # SVG のテキストノードが PDF に漏れていないこと
+    # Typst が <svg> を描画できない場合、SVG 内の <tspan> テキストが
+    # 連結されてプレーンテキストとして現れる (例: "intidPK", "stringnamePK" など)
+    if ! command -v pdftotext &>/dev/null; then
+      echo "  SKIP: pdftotext not found (install poppler)"
+    else
+      PDF_TEXT=$(pdftotext "$OUT_PDF" - 2>/dev/null)
+      if echo "$PDF_TEXT" | grep -q 'intidPK'; then
+        fail "SVG tspan text leaked into PDF — SVG not rendered by Typst"
+      else
+        pass "no SVG tspan leak in PDF"
+      fi
     fi
   else
     fail "PDF not generated"
@@ -86,10 +117,10 @@ graph LR
   A --> B
 ```' | "$BINARY" 2>/dev/null)
 
-if echo "$RESULT" | grep -q '<svg'; then
-  pass "stdin pipe produces SVG"
+if echo "$RESULT" | grep -q '!\[\](.*\.svg)'; then
+  pass "stdin pipe produces SVG file reference"
 else
-  fail "stdin pipe: no SVG in output"
+  fail "stdin pipe: no SVG file reference in output"
 fi
 echo ""
 

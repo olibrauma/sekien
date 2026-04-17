@@ -1,6 +1,8 @@
 use crate::renderer::render_all;
 use serde_json::{json, Value};
+use std::env;
 use std::error::Error;
+use std::fs;
 
 fn is_mermaid_block(block: &Value) -> bool {
     block["t"] == "CodeBlock"
@@ -33,10 +35,19 @@ pub fn filter(input: &str) -> Result<String, Box<dyn Error>> {
 
     let svgs = render_all(codes)?;
 
-    // CodeBlock → RawBlock(html, svg) に差し替え
+    // SVG をファイルに書き出し、CodeBlock → Para(Image) に差し替え
+    let pid = std::process::id();
+    let tmp = env::temp_dir();
+
     let blocks_mut = ast["blocks"].as_array_mut().unwrap();
-    for (&idx, svg) in mermaid_indices.iter().zip(svgs.iter()) {
-        blocks_mut[idx] = json!({ "t": "RawBlock", "c": ["html", svg] });
+    for (i, (&idx, svg)) in mermaid_indices.iter().zip(svgs.iter()).enumerate() {
+        let path = tmp.join(format!("mmsvg_{}_{}.svg", pid, i));
+        fs::write(&path, svg)?;
+        let path_str = path.to_string_lossy().into_owned();
+        blocks_mut[idx] = json!({
+            "t": "Para",
+            "c": [{ "t": "Image", "c": [["", [], []], [], [path_str, ""]] }]
+        });
     }
 
     Ok(serde_json::to_string(&ast)?)

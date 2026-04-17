@@ -1,5 +1,7 @@
 use crate::renderer::render_all;
+use std::env;
 use std::error::Error;
+use std::fs;
 
 // ```mermaid\n...\n``` にマッチ
 const FENCE_OPEN: &str = "```mermaid\n";
@@ -45,10 +47,26 @@ pub fn transform(input: &str) -> Result<String, Box<dyn Error>> {
     let codes: Vec<String> = blocks.iter().map(|b| b.code.clone()).collect();
     let svgs = render_all(codes)?;
 
+    // SVG をファイルに書き出す
+    let pid = std::process::id();
+    let tmp = env::temp_dir();
+    let svg_paths: Vec<_> = svgs
+        .iter()
+        .enumerate()
+        .map(|(i, svg)| {
+            let path = tmp.join(format!("mmsvg_{}_{}.svg", pid, i));
+            fs::write(&path, svg)?;
+            Ok::<_, Box<dyn Error>>(path)
+        })
+        .collect::<Result<Vec<_>, _>>()?;
+
     // 後ろから置換することで文字位置がずれない
     let mut output = input.to_string();
-    for (block, svg) in blocks.iter().zip(svgs.iter()).rev() {
-        output.replace_range(block.start..block.end, svg);
+    for (block, path) in blocks.iter().zip(svg_paths.iter()).rev() {
+        output.replace_range(
+            block.start..block.end,
+            &format!("![]({})", path.display()),
+        );
     }
 
     Ok(output)
