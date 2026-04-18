@@ -9,7 +9,7 @@ fn usage() -> &'static str {
     "Usage:
   mmsvg [file.mmd]          Mermaid → SVG (stdout)
   cat diagram.mmd | mmsvg   Mermaid → SVG (stdout)
-  mmsvg --pandoc-filter     Pandoc AST JSON in → AST JSON out"
+  pandoc --filter mmsvg     Pandoc filter (called automatically by pandoc)"
 }
 
 fn read_mermaid(file_path: Option<&str>) -> Result<String, Box<dyn Error>> {
@@ -26,9 +26,6 @@ fn read_mermaid(file_path: Option<&str>) -> Result<String, Box<dyn Error>> {
 // pandoc は filter を `<binary> <output-format>` で呼び出す。
 // 引数が 1 つでフラグでもファイルパスでもなければ pandoc filter モードと判定する。
 fn is_pandoc_filter(args: &[String]) -> bool {
-    if args.iter().any(|a| a == "--pandoc-filter") {
-        return true;
-    }
     args.len() == 1
         && !args[0].starts_with('-')
         && !args[0].contains('/')
