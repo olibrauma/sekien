@@ -1,3 +1,4 @@
+use anyhow::{Context, Result};
 use serde_json::Value;
 use std::sync::{Arc, Mutex};
 use wry::{WebView, WebViewBuilder};
@@ -62,18 +63,32 @@ struct App {
 
 impl ApplicationHandler<String> for App {
     fn resumed(&mut self, event_loop: &ActiveEventLoop) {
-        let window = event_loop
+        let window = match event_loop
             .create_window(Window::default_attributes().with_visible(false))
-            .unwrap();
+        {
+            Ok(w) => w,
+            Err(e) => {
+                *self.error.lock().unwrap() = Some(format!("failed to create window: {e}"));
+                event_loop.exit();
+                return;
+            }
+        };
 
         let proxy = self.proxy.clone();
-        let webview = WebViewBuilder::new(&window)
+        let webview = match WebViewBuilder::new(&window)
             .with_html(build_html(&self.font_family))
             .with_ipc_handler(move |req: wry::http::Request<String>| {
                 let _ = proxy.send_event(req.into_body());
             })
             .build()
-            .unwrap();
+        {
+            Ok(w) => w,
+            Err(e) => {
+                *self.error.lock().unwrap() = Some(format!("failed to create webview: {e}"));
+                event_loop.exit();
+                return;
+            }
+        };
 
         self._window = Some(window);
         self.webview = Some(webview);
@@ -90,21 +105,23 @@ impl ApplicationHandler<String> for App {
     fn user_event(&mut self, event_loop: &ActiveEventLoop, msg: String) {
         let Ok(parsed) = serde_json::from_str::<Value>(&msg) else { return };
 
-        let webview = self.webview.as_ref().unwrap();
+        let Some(webview) = self.webview.as_ref() else { return };
 
         match parsed["type"].as_str().unwrap_or("") {
             "ready" if !self.started => {
                 self.started = true;
+                // serde_json::to_string on a String is infallible
                 let js = format!(
                     "renderMermaid(0, {})",
-                    serde_json::to_string(&self.blocks[0]).unwrap()
+                    serde_json::to_string(&self.blocks[0]).expect("serialize block")
                 );
                 let _ = webview.evaluate_script(&js);
             }
             "svg" => {
                 let id = parsed["id"].as_u64().unwrap_or(0) as usize;
-                self.results.lock().unwrap()[id] =
-                    parsed["svg"].as_str().unwrap_or("").to_string();
+                if let Ok(mut results) = self.results.lock() {
+                    results[id] = parsed["svg"].as_str().unwrap_or("").to_string();
+                }
 
                 let next = id + 1;
                 if next < self.blocks.len() {
@@ -112,7 +129,7 @@ impl ApplicationHandler<String> for App {
                     let js = format!(
                         "renderMermaid({}, {})",
                         next,
-                        serde_json::to_string(&self.blocks[next]).unwrap()
+                        serde_json::to_string(&self.blocks[next]).expect("serialize block")
                     );
                     let _ = webview.evaluate_script(&js);
                 } else {
@@ -121,7 +138,9 @@ impl ApplicationHandler<String> for App {
             }
             "error" => {
                 let msg = parsed["error"].as_str().unwrap_or("unknown error").to_string();
-                *self.error.lock().unwrap() = Some(msg);
+                if let Ok(mut err) = self.error.lock() {
+                    *err = Some(msg);
+                }
                 event_loop.exit();
             }
             _ => {}
@@ -129,7 +148,7 @@ impl ApplicationHandler<String> for App {
     }
 }
 
-pub fn render_all(blocks: Vec<String>, font_family: &str) -> Result<Vec<String>, Box<dyn std::error::Error>> {
+pub fn render_all(blocks: Vec<String>, font_family: &str) -> Result<Vec<String>> {
     if blocks.is_empty() {
         return Ok(vec![]);
     }
@@ -137,7 +156,9 @@ pub fn render_all(blocks: Vec<String>, font_family: &str) -> Result<Vec<String>,
     let results = Arc::new(Mutex::new(vec![String::new(); blocks.len()]));
     let error = Arc::new(Mutex::new(None::<String>));
 
-    let event_loop = EventLoop::<String>::with_user_event().build()?;
+    let event_loop = EventLoop::<String>::with_user_event()
+        .build()
+        .context("failed to build event loop")?;
     let proxy = event_loop.create_proxy();
 
     let mut app = App {
@@ -152,10 +173,10 @@ pub fn render_all(blocks: Vec<String>, font_family: &str) -> Result<Vec<String>,
         webview: None,
     };
 
-    event_loop.run_app(&mut app)?;
+    event_loop.run_app(&mut app).context("event loop error")?;
 
     if let Some(msg) = error.lock().unwrap().take() {
-        return Err(msg.into());
+        return Err(anyhow::anyhow!(msg));
     }
 
     let svgs = results.lock().unwrap().clone();

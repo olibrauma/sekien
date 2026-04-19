@@ -1,6 +1,6 @@
 use crate::renderer::render_all;
+use anyhow::{Context, Result};
 use serde_json::{json, Value};
-use std::error::Error;
 
 fn is_mermaid_block(block: &Value) -> bool {
     block["t"] == "CodeBlock"
@@ -10,11 +10,11 @@ fn is_mermaid_block(block: &Value) -> bool {
             .unwrap_or(false)
 }
 
-pub fn filter(input: &str, font_family: &str) -> Result<String, Box<dyn Error>> {
-    let mut ast: Value = serde_json::from_str(input)?;
+pub fn filter(input: &str, font_family: &str) -> Result<String> {
+    let mut ast: Value = serde_json::from_str(input).context("invalid pandoc AST")?;
 
     // Mermaid ブロックを収集
-    let blocks = ast["blocks"].as_array().ok_or("no blocks")?;
+    let blocks = ast["blocks"].as_array().context("no blocks in pandoc AST")?;
     let (mermaid_indices, codes): (Vec<usize>, Vec<String>) = blocks
         .iter()
         .enumerate()
@@ -34,5 +34,5 @@ pub fn filter(input: &str, font_family: &str) -> Result<String, Box<dyn Error>> 
         blocks_mut[idx] = json!({ "t": "RawBlock", "c": ["html", svg] });
     }
 
-    Ok(serde_json::to_string(&ast)?)
+    Ok(serde_json::to_string(&ast).context("failed to serialize pandoc AST")?)
 }

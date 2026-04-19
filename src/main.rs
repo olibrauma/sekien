@@ -1,7 +1,7 @@
 mod pandoc;
 mod renderer;
 
-use std::error::Error;
+use anyhow::{Context, Result};
 use std::fs;
 use std::io::{self, Read};
 
@@ -95,18 +95,18 @@ fn resolve_font_family(flag: Option<String>) -> String {
         .unwrap_or_else(|| DEFAULT_FONT_FAMILY.to_string())
 }
 
-fn read_mermaid(file_path: Option<&str>) -> Result<String, Box<dyn Error>> {
+fn read_mermaid(file_path: Option<&str>) -> Result<String> {
     match file_path {
-        Some(p) => Ok(fs::read_to_string(p)?),
+        Some(p) => fs::read_to_string(p).with_context(|| format!("cannot read '{p}'")),
         None => {
             let mut buf = String::new();
-            io::stdin().read_to_string(&mut buf)?;
+            io::stdin().read_to_string(&mut buf).context("failed to read stdin")?;
             Ok(buf)
         }
     }
 }
 
-fn main() -> Result<(), Box<dyn Error>> {
+fn main() -> Result<()> {
     let raw: Vec<String> = std::env::args().skip(1).collect();
 
     let args = parse_args(raw).unwrap_or_else(|e| {
