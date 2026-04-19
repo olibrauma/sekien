@@ -52,7 +52,6 @@ struct App {
     error: Arc<Mutex<Option<String>>>,
     // レンダリング対象のブロック
     blocks: Vec<String>,
-    n: usize,
     current: usize,
     started: bool,
     // winit/wry ハンドル (resumed 後に初期化)
@@ -110,7 +109,7 @@ impl ApplicationHandler for App {
                     parsed["svg"].as_str().unwrap_or("").to_string();
 
                 let next = id + 1;
-                if next < self.n {
+                if next < self.blocks.len() {
                     self.current = next;
                     let js = format!(
                         "renderMermaid({}, {})",
@@ -137,8 +136,7 @@ pub fn render_all(blocks: Vec<String>) -> Result<Vec<String>, Box<dyn std::error
         return Ok(vec![]);
     }
 
-    let n = blocks.len();
-    let results = Arc::new(Mutex::new(vec![String::new(); n]));
+    let results = Arc::new(Mutex::new(vec![String::new(); blocks.len()]));
     let error = Arc::new(Mutex::new(None::<String>));
 
     let mut app = App {
@@ -146,7 +144,6 @@ pub fn render_all(blocks: Vec<String>) -> Result<Vec<String>, Box<dyn std::error
         results: Arc::clone(&results),
         error: Arc::clone(&error),
         blocks,
-        n,
         current: 0,
         started: false,
         _window: None,

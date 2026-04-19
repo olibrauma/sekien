@@ -1286,15 +1286,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "mmsvg"
-version = "0.1.0"
-dependencies = [
- "serde_json",
- "winit",
- "wry",
-]
-
-[[package]]
 name = "ndk"
 version = "0.9.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -2125,6 +2116,15 @@ dependencies = [
  "memmap2",
  "smithay-client-toolkit",
  "tiny-skia",
+]
+
+[[package]]
+name = "sekien"
+version = "0.1.0"
+dependencies = [
+ "serde_json",
+ "winit",
+ "wry",
 ]
 
 [[package]]

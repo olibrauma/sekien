@@ -6,10 +6,12 @@ use std::fs;
 use std::io::{self, Read};
 
 fn usage() -> &'static str {
-    "Usage:
-  mmsvg [file.mmd]          Mermaid → SVG (stdout)
-  cat diagram.mmd | mmsvg   Mermaid → SVG (stdout)
-  pandoc --filter mmsvg     Pandoc filter (called automatically by pandoc)"
+    "sekien — Mermaid Drawer
+
+Usage:
+  sekien [file.mmd]          Mermaid → SVG (stdout)
+  cat diagram.mmd | sekien   Mermaid → SVG (stdout)
+  pandoc --filter sekien     Pandoc filter (called automatically by pandoc)"
 }
 
 fn read_mermaid(file_path: Option<&str>) -> Result<String, Box<dyn Error>> {
@@ -40,6 +42,11 @@ fn main() -> Result<(), Box<dyn Error>> {
         return Ok(());
     }
 
+    if args.iter().any(|a| a == "--version" || a == "-V") {
+        println!("sekien {}", env!("CARGO_PKG_VERSION"));
+        return Ok(());
+    }
+
     if is_pandoc_filter(&args) {
         let mut input = String::new();
         io::stdin().read_to_string(&mut input)?;
@@ -50,14 +57,14 @@ fn main() -> Result<(), Box<dyn Error>> {
     // Mermaid → SVG (stdout)
     let files: Vec<&str> = args.iter().filter(|a| !a.starts_with('-')).map(|s| s.as_str()).collect();
     if files.len() > 1 {
-        eprintln!("error: too many arguments (mmsvg takes at most one file)");
+        eprintln!("error: too many arguments (sekien takes at most one file)");
         eprintln!("hint:  for multiple files, use a shell loop:");
-        eprintln!("         for f in *.mmd; do mmsvg \"$f\" > \"${{f%.mmd}}.svg\"; done");
+        eprintln!("         for f in *.mmd; do sekien \"$f\" > \"${{f%.mmd}}.svg\"; done");
         std::process::exit(1);
     }
     let file_path = files.into_iter().next();
     let code = read_mermaid(file_path)?;
     let svgs = renderer::render_all(vec![code])?;
-    print!("{}", svgs[0]);
+    println!("{}", svgs[0]);
     Ok(())
 }

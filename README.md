@@ -1,6 +1,6 @@
-# mmsvg
+# sekien — Mermaid Drawer
 
-Mermaid コードを SVG に変換する CLI ツール。
+sekien is a drawer of Mermaids — Mermaid コードを SVG に変換する CLI ツール。
 
 - OS ネイティブの WebView (macOS: WKWebView) を使用するため、Chromium のバンドルが不要
 - Pandoc の `--filter` オプションに対応
@@ -9,23 +9,23 @@ Mermaid コードを SVG に変換する CLI ツール。
 
 ```bash
 # .mmd ファイル → SVG (stdout)
-mmsvg diagram.mmd > diagram.svg
+sekien diagram.mmd > diagram.svg
 
 # stdin → SVG (stdout)
-cat diagram.mmd | mmsvg > diagram.svg
+cat diagram.mmd | sekien > diagram.svg
 
 # Pandoc filter として使う (HTML 出力に SVG がインラインで埋め込まれる)
-pandoc input.md -o output.html --filter mmsvg
+pandoc input.md -o output.html --filter sekien
 ```
 
 ### 注意: ファイル名に拡張子をつけること
 
-mmsvg は引数がファイルパス (`.` を含む) かどうかで動作モードを切り替える。
+sekien は引数がファイルパス (`.` を含む) かどうかで動作モードを切り替える。
 `.mmd` などの拡張子なしでファイルを渡すと、誤って Pandoc filter モードと判定される。
 
 ```bash
-mmsvg diagram      # NG: filter モードと判定される
-mmsvg diagram.mmd  # OK
+sekien diagram      # NG: filter モードと判定される
+sekien diagram.mmd  # OK
 ```
 
 ### 対応 PDF engine
@@ -38,7 +38,7 @@ mmsvg diagram.mmd  # OK
 | `typst` | ✗ (raw HTML を drop) |
 
 ```bash
-pandoc input.md -o output.pdf --filter mmsvg --pdf-engine=weasyprint
+pandoc input.md -o output.pdf --filter sekien --pdf-engine=weasyprint
 ```
 
 ## ビルド
@@ -54,7 +54,7 @@ cargo build --release
 ## 構成
 
 ```
-mmsvg/
+sekien/
 ├── Cargo.toml
 ├── assets/
 │   └── mermaid.min.js       # コンパイル時にバイナリへ埋め込まれる
@@ -104,5 +104,5 @@ stdin の Pandoc AST JSON を受け取り、
 { "t": "RawBlock", "c": ["html", "<svg ...>...</svg>"] }
 ```
 
-pandoc は filter を `mmsvg <output-format>` として呼び出す。
+pandoc は filter を `sekien <output-format>` として呼び出す。
 引数が `.` を含まない単語の場合は Pandoc filter モードと判定する。

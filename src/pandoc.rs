@@ -15,21 +15,16 @@ pub fn filter(input: &str) -> Result<String, Box<dyn Error>> {
 
     // Mermaid ブロックを収集
     let blocks = ast["blocks"].as_array().ok_or("no blocks")?;
-    let mermaid_indices: Vec<usize> = blocks
+    let (mermaid_indices, codes): (Vec<usize>, Vec<String>) = blocks
         .iter()
         .enumerate()
         .filter(|(_, b)| is_mermaid_block(b))
-        .map(|(i, _)| i)
-        .collect();
+        .map(|(i, b)| (i, b["c"][1].as_str().unwrap_or("").to_string()))
+        .unzip();
 
     if mermaid_indices.is_empty() {
         return Ok(input.to_string());
     }
-
-    let codes: Vec<String> = mermaid_indices
-        .iter()
-        .map(|&i| blocks[i]["c"][1].as_str().unwrap_or("").to_string())
-        .collect();
 
     let svgs = render_all(codes)?;
 

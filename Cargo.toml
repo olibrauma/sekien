@@ -1,10 +1,11 @@
 [package]
-name = "mmsvg"
+name = "sekien"
 version = "0.1.0"
 edition = "2021"
+description = "a drawer of Mermaids — converts Mermaid diagrams to SVG"
 
 [[bin]]
-name = "mmsvg"
+name = "sekien"
 path = "src/main.rs"
 
 [dependencies]

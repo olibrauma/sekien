@@ -1,15 +1,15 @@
 #!/bin/bash
-# mmsvg テストスクリプト
+# sekien テストスクリプト
 # 使い方: ./test.sh
 set -euo pipefail
 
-BINARY="./target/debug/mmsvg"
+BINARY="./target/debug/sekien"
 
 pass() { echo "  PASS: $1"; }
 fail() { echo "  FAIL: $1"; FAILED=$((FAILED + 1)); }
 FAILED=0
 
-echo "=== mmsvg test ==="
+echo "=== sekien test ==="
 echo ""
 
 # --- 前提確認 ---
@@ -19,7 +19,7 @@ echo ""
 
 # --- テスト 1: .mmd ファイル → SVG (stdout) ---
 echo "[1] .mmd → SVG (stdout)"
-MMD=$(mktemp /tmp/mmsvg_test_XXXXXX.mmd)
+MMD=$(mktemp /tmp/sekien_test_XXXXXX.mmd)
 printf 'graph LR\n  A --> B\n' > "$MMD"
 SVG=$("$BINARY" "$MMD" 2>/dev/null)
 rm -f "$MMD"
