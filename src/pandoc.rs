@@ -10,7 +10,7 @@ fn is_mermaid_block(block: &Value) -> bool {
             .unwrap_or(false)
 }
 
-pub fn filter(input: &str) -> Result<String, Box<dyn Error>> {
+pub fn filter(input: &str, font_family: &str) -> Result<String, Box<dyn Error>> {
     let mut ast: Value = serde_json::from_str(input)?;
 
     // Mermaid ブロックを収集
@@ -26,7 +26,7 @@ pub fn filter(input: &str) -> Result<String, Box<dyn Error>> {
         return Ok(input.to_string());
     }
 
-    let svgs = render_all(codes)?;
+    let svgs = render_all(codes, font_family)?;
 
     // CodeBlock → RawBlock("html", svg) に置換
     let blocks_mut = ast["blocks"].as_array_mut().unwrap();

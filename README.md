@@ -30,16 +30,60 @@ sekien diagram.mmd  # OK
 
 ### 対応 PDF engine
 
+sekien は `RawBlock("html", svg)` を出力するため、HTML を経由しないエンジンでは SVG が落とされる。
+
 | PDF engine | 動作 |
 |---|---|
 | `weasyprint` | ✓ (HTML 経由) |
-| `wkhtmltopdf` | ✓ (HTML 経由) |
-| `pdflatex` / `xelatex` | ✗ (raw HTML を drop) |
-| `typst` | ✗ (raw HTML を drop) |
+| `pdflatex` / `xelatex` / `lualatex` | ✗ (raw HTML を drop) |
+| `typst` | ✗ (raw HTML を drop) — Lua filter で回避可能 |
 
 ```bash
 pandoc input.md -o output.pdf --filter sekien --pdf-engine=weasyprint
 ```
+
+#### typst で PDF 化する (Lua filter を使う)
+
+typst は `RawBlock("html")` を drop するが、sekien に同梱の Lua filter で
+SVG をファイルに書き出して Image ノードに変換することで回避できる。
+
+```bash
+# Lua filter をカレントディレクトリに書き出す
+sekien --print-lua-filter > sekien.lua
+
+pandoc input.md -o output.pdf \
+  --pdf-engine=typst \
+  --filter sekien \
+  --lua-filter sekien.lua \
+  -V mainfont="Hiragino Sans"
+```
+
+pandoc の user data directory に置くとパスなしで参照できる:
+
+```bash
+sekien --print-lua-filter > ~/.local/share/pandoc/filters/sekien.lua
+
+pandoc input.md -o output.pdf \
+  --pdf-engine=typst \
+  --filter sekien \
+  --lua-filter sekien.lua \
+  -V mainfont="Hiragino Sans"
+```
+
+### フォントの指定
+
+ダイアグラム内のテキストフォントは `--font-family` フラグまたは環境変数で指定できる。
+デフォルトは `"Noto Sans JP, sans-serif"`。
+
+```bash
+# フラグで指定 (スタンドアロンモード)
+sekien --font-family "Hiragino Sans" diagram.mmd > diagram.svg
+
+# 環境変数で指定 (pandoc filter モードでも有効)
+export SEKIEN_FONT_FAMILY="Hiragino Sans, Noto Sans JP, sans-serif"
+```
+
+pandoc filter モードでは pandoc がフラグを渡せないため、環境変数を使う。
 
 ## ビルド
 

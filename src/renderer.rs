@@ -4,13 +4,13 @@ use wry::{WebView, WebViewBuilder};
 use winit::{
     application::ApplicationHandler,
     event::WindowEvent,
-    event_loop::{ActiveEventLoop, ControlFlow, EventLoop},
+    event_loop::{ActiveEventLoop, ControlFlow, EventLoop, EventLoopProxy},
     window::{Window, WindowId},
 };
 
 const MERMAID_JS: &str = include_str!("../assets/mermaid.min.js");
 
-fn build_html() -> String {
+fn build_html(font_family: &str) -> String {
     format!(
         r#"<!DOCTYPE html>
 <html>
@@ -23,7 +23,7 @@ mermaid.initialize({{
   startOnLoad: false,
   htmlLabels: false,
   theme: 'default',
-  fontFamily: 'Noto Sans JP, sans-serif'
+  fontFamily: '{font_family}'
 }});
 
 window.renderMermaid = async function(id, code) {{
@@ -40,18 +40,19 @@ window.ipc.postMessage(JSON.stringify({{ type: 'ready' }}));
 </body>
 </html>"#,
         mermaid = MERMAID_JS,
+        font_family = font_family,
     )
 }
 
 struct App {
-    // IPC バッファ (IPC ハンドラと共有)
-    ipc_buf: Arc<Mutex<Option<String>>>,
+    proxy: EventLoopProxy<String>,
     // 収集した SVG (呼び出し元と共有)
     results: Arc<Mutex<Vec<String>>>,
     // レンダリングエラー (呼び出し元と共有)
     error: Arc<Mutex<Option<String>>>,
     // レンダリング対象のブロック
     blocks: Vec<String>,
+    font_family: String,
     current: usize,
     started: bool,
     // winit/wry ハンドル (resumed 後に初期化)
@@ -59,17 +60,17 @@ struct App {
     webview: Option<WebView>,
 }
 
-impl ApplicationHandler for App {
+impl ApplicationHandler<String> for App {
     fn resumed(&mut self, event_loop: &ActiveEventLoop) {
         let window = event_loop
             .create_window(Window::default_attributes().with_visible(false))
             .unwrap();
 
-        let ipc_ref = Arc::clone(&self.ipc_buf);
+        let proxy = self.proxy.clone();
         let webview = WebViewBuilder::new(&window)
-            .with_html(build_html())
+            .with_html(build_html(&self.font_family))
             .with_ipc_handler(move |req: wry::http::Request<String>| {
-                *ipc_ref.lock().unwrap() = Some(req.into_body());
+                let _ = proxy.send_event(req.into_body());
             })
             .build()
             .unwrap();
@@ -77,7 +78,7 @@ impl ApplicationHandler for App {
         self._window = Some(window);
         self.webview = Some(webview);
 
-        event_loop.set_control_flow(ControlFlow::Poll);
+        event_loop.set_control_flow(ControlFlow::Wait);
     }
 
     fn window_event(&mut self, event_loop: &ActiveEventLoop, _id: WindowId, event: WindowEvent) {
@@ -86,10 +87,7 @@ impl ApplicationHandler for App {
         }
     }
 
-    // イベントキューが空になるたびに呼ばれる — IPC ポーリングをここで行う
-    fn about_to_wait(&mut self, event_loop: &ActiveEventLoop) {
-        let msg = self.ipc_buf.lock().unwrap().take();
-        let Some(msg) = msg else { return };
+    fn user_event(&mut self, event_loop: &ActiveEventLoop, msg: String) {
         let Ok(parsed) = serde_json::from_str::<Value>(&msg) else { return };
 
         let webview = self.webview.as_ref().unwrap();
@@ -131,7 +129,7 @@ impl ApplicationHandler for App {
     }
 }
 
-pub fn render_all(blocks: Vec<String>) -> Result<Vec<String>, Box<dyn std::error::Error>> {
+pub fn render_all(blocks: Vec<String>, font_family: &str) -> Result<Vec<String>, Box<dyn std::error::Error>> {
     if blocks.is_empty() {
         return Ok(vec![]);
     }
@@ -139,18 +137,22 @@ pub fn render_all(blocks: Vec<String>) -> Result<Vec<String>, Box<dyn std::error
     let results = Arc::new(Mutex::new(vec![String::new(); blocks.len()]));
     let error = Arc::new(Mutex::new(None::<String>));
 
+    let event_loop = EventLoop::<String>::with_user_event().build()?;
+    let proxy = event_loop.create_proxy();
+
     let mut app = App {
-        ipc_buf: Arc::new(Mutex::new(None)),
+        proxy,
         results: Arc::clone(&results),
         error: Arc::clone(&error),
         blocks,
+        font_family: font_family.to_string(),
         current: 0,
         started: false,
         _window: None,
         webview: None,
     };
 
-    EventLoop::new()?.run_app(&mut app)?;
+    event_loop.run_app(&mut app)?;
 
     if let Some(msg) = error.lock().unwrap().take() {
         return Err(msg.into());

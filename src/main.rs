@@ -5,13 +5,94 @@ use std::error::Error;
 use std::fs;
 use std::io::{self, Read};
 
+const DEFAULT_FONT_FAMILY: &str = "Noto Sans JP, sans-serif";
+const LUA_FILTER: &str = include_str!("../assets/sekien.lua");
+
 fn usage() -> &'static str {
     "sekien — Mermaid Drawer
 
 Usage:
-  sekien [file.mmd]          Mermaid → SVG (stdout)
-  cat diagram.mmd | sekien   Mermaid → SVG (stdout)
-  pandoc --filter sekien     Pandoc filter (called automatically by pandoc)"
+  sekien [--font-family <font>] [file.mmd]   Mermaid → SVG (stdout)
+  cat diagram.mmd | sekien                   Mermaid → SVG (stdout)
+  pandoc --filter sekien                     Pandoc filter (called automatically by pandoc)
+
+Options:
+  --font-family <font>   Font family for diagram text (default: \"Noto Sans JP, sans-serif\")
+                         Also configurable via SEKIEN_FONT_FAMILY environment variable.
+                         In pandoc filter mode, use the environment variable instead.
+  --print-lua-filter     Print the bundled Lua filter for typst PDF output (see below)
+  --version, -V          Show version
+  --help, -h             Show this help
+
+Typst PDF output:
+  sekien outputs RawBlock(\"html\", svg) which typst drops. Use the bundled Lua filter
+  to convert SVG blocks to Image nodes that typst can include:
+
+    sekien --print-lua-filter > sekien.lua
+    pandoc input.md -o output.pdf --pdf-engine=typst --filter sekien --lua-filter sekien.lua
+
+  To install globally (reference by name without path):
+    sekien --print-lua-filter > ~/.local/share/pandoc/filters/sekien.lua
+    pandoc input.md -o output.pdf --pdf-engine=typst --filter sekien --lua-filter sekien.lua"
+}
+
+// パース済み引数
+struct Args {
+    font_family: Option<String>,
+    command: Command,
+}
+
+enum Command {
+    Help,
+    Version,
+    PrintLuaFilter,
+    PandocFilter,
+    Render { file: Option<String> },
+}
+
+fn parse_args(raw: Vec<String>) -> Result<Args, String> {
+    let mut font_family = None;
+    let mut rest: Vec<String> = Vec::new();
+    let mut iter = raw.into_iter();
+
+    while let Some(arg) = iter.next() {
+        match arg.as_str() {
+            "--help" | "-h"         => return Ok(Args { font_family: None, command: Command::Help }),
+            "--version" | "-V"      => return Ok(Args { font_family: None, command: Command::Version }),
+            "--print-lua-filter"    => return Ok(Args { font_family: None, command: Command::PrintLuaFilter }),
+            "--font-family" => {
+                font_family = Some(iter.next().ok_or("--font-family requires a value")?);
+            }
+            _ => rest.push(arg),
+        }
+    }
+
+    // pandoc は filter を `<binary> <output-format>` で呼び出す。
+    // 引数が 1 つでフラグでもファイルパスでもなければ pandoc filter モードと判定する。
+    let command = if rest.len() == 1
+        && !rest[0].starts_with('-')
+        && !rest[0].contains('/')
+        && !rest[0].contains('.')
+    {
+        Command::PandocFilter
+    } else {
+        let files: Vec<String> = rest.into_iter().filter(|a| !a.starts_with('-')).collect();
+        if files.len() > 1 {
+            return Err(format!(
+                "error: too many arguments (sekien takes at most one file)\n\
+                 hint:  for multiple files, use a shell loop:\n\
+                 \t for f in *.mmd; do sekien \"$f\" > \"${{f%.mmd}}.svg\"; done"
+            ));
+        }
+        Command::Render { file: files.into_iter().next() }
+    };
+
+    Ok(Args { font_family, command })
+}
+
+fn resolve_font_family(flag: Option<String>) -> String {
+    flag.or_else(|| std::env::var("SEKIEN_FONT_FAMILY").ok())
+        .unwrap_or_else(|| DEFAULT_FONT_FAMILY.to_string())
 }
 
 fn read_mermaid(file_path: Option<&str>) -> Result<String, Box<dyn Error>> {
@@ -25,46 +106,37 @@ fn read_mermaid(file_path: Option<&str>) -> Result<String, Box<dyn Error>> {
     }
 }
 
-// pandoc は filter を `<binary> <output-format>` で呼び出す。
-// 引数が 1 つでフラグでもファイルパスでもなければ pandoc filter モードと判定する。
-fn is_pandoc_filter(args: &[String]) -> bool {
-    args.len() == 1
-        && !args[0].starts_with('-')
-        && !args[0].contains('/')
-        && !args[0].contains('.')
-}
-
 fn main() -> Result<(), Box<dyn Error>> {
-    let args: Vec<String> = std::env::args().skip(1).collect();
+    let raw: Vec<String> = std::env::args().skip(1).collect();
 
-    if args.iter().any(|a| a == "--help" || a == "-h") {
-        println!("{}", usage());
-        return Ok(());
-    }
-
-    if args.iter().any(|a| a == "--version" || a == "-V") {
-        println!("sekien {}", env!("CARGO_PKG_VERSION"));
-        return Ok(());
-    }
-
-    if is_pandoc_filter(&args) {
-        let mut input = String::new();
-        io::stdin().read_to_string(&mut input)?;
-        print!("{}", pandoc::filter(&input)?);
-        return Ok(());
-    }
-
-    // Mermaid → SVG (stdout)
-    let files: Vec<&str> = args.iter().filter(|a| !a.starts_with('-')).map(|s| s.as_str()).collect();
-    if files.len() > 1 {
-        eprintln!("error: too many arguments (sekien takes at most one file)");
-        eprintln!("hint:  for multiple files, use a shell loop:");
-        eprintln!("         for f in *.mmd; do sekien \"$f\" > \"${{f%.mmd}}.svg\"; done");
+    let args = parse_args(raw).unwrap_or_else(|e| {
+        eprintln!("{}", e);
         std::process::exit(1);
+    });
+
+    let font_family = resolve_font_family(args.font_family);
+
+    match args.command {
+        Command::Help => {
+            println!("{}", usage());
+        }
+        Command::Version => {
+            println!("sekien {}", env!("CARGO_PKG_VERSION"));
+        }
+        Command::PrintLuaFilter => {
+            print!("{}", LUA_FILTER);
+        }
+        Command::PandocFilter => {
+            let mut input = String::new();
+            io::stdin().read_to_string(&mut input)?;
+            print!("{}", pandoc::filter(&input, &font_family)?);
+        }
+        Command::Render { file } => {
+            let code = read_mermaid(file.as_deref())?;
+            let svgs = renderer::render_all(vec![code], &font_family)?;
+            println!("{}", svgs[0]);
+        }
     }
-    let file_path = files.into_iter().next();
-    let code = read_mermaid(file_path)?;
-    let svgs = renderer::render_all(vec![code])?;
-    println!("{}", svgs[0]);
+
     Ok(())
 }
