@@ -137,9 +137,10 @@ impl ApplicationHandler<String> for App {
                 }
             }
             "error" => {
-                let msg = parsed["error"].as_str().unwrap_or("unknown error").to_string();
+                let id = parsed["id"].as_u64().unwrap_or(0) as usize;
+                let msg = parsed["error"].as_str().unwrap_or("unknown error");
                 if let Ok(mut err) = self.error.lock() {
-                    *err = Some(msg);
+                    *err = Some(format!("mermaid block {}: {}", id + 1, msg));
                 }
                 event_loop.exit();
             }
