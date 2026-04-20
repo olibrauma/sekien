@@ -2,6 +2,7 @@ mod pandoc;
 mod renderer;
 
 use anyhow::{Context, Result};
+use renderer::RenderConfig;
 use std::fs;
 use std::io::{self, Read};
 
@@ -92,14 +93,6 @@ fn parse_args(raw: Vec<String>) -> Result<Args, String> {
     };
 
     Ok(Args { font_family, command })
-}
-
-fn resolve_font_family(flag: Option<String>) -> Option<String> {
-    flag.or_else(|| std::env::var("SEKIEN_FONT").ok())
-}
-
-fn resolve_theme() -> Option<String> {
-    std::env::var("SEKIEN_THEME").ok()
 }
 
 fn read_mermaid(file_path: Option<&str>) -> Result<String> {
@@ -223,8 +216,10 @@ fn main() -> Result<()> {
         std::process::exit(1);
     });
 
-    let font_family = resolve_font_family(args.font_family);
-    let theme = resolve_theme();
+    let config = RenderConfig {
+        font_family: args.font_family.or_else(|| std::env::var("SEKIEN_FONT").ok()),
+        theme: std::env::var("SEKIEN_THEME").ok(),
+    };
 
     match args.command {
         Command::Help => {
@@ -239,11 +234,11 @@ fn main() -> Result<()> {
         Command::PandocFilter => {
             let mut input = String::new();
             io::stdin().read_to_string(&mut input)?;
-            print!("{}", pandoc::filter(&input, font_family.as_deref(), theme.as_deref())?);
+            print!("{}", pandoc::filter(&input, &config)?);
         }
         Command::Render { file } => {
             let code = read_mermaid(file.as_deref())?;
-            let svgs = renderer::render_all(vec![code], font_family.as_deref(), theme.as_deref())?;
+            let svgs = renderer::render_all(vec![code], &config)?;
             println!("{}", svgs[0]);
         }
     }

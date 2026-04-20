@@ -1,4 +1,4 @@
-use crate::renderer::render_all;
+use crate::renderer::{render_all, RenderConfig};
 use anyhow::{Context, Result};
 use serde_json::{json, Value};
 
@@ -10,29 +10,38 @@ fn is_mermaid_block(block: &Value) -> bool {
             .unwrap_or(false)
 }
 
-pub fn filter(input: &str, font_family: Option<&str>, theme: Option<&str>) -> Result<String> {
-    let mut ast: Value = serde_json::from_str(input).context("invalid pandoc AST")?;
-
-    // Mermaid ブロックを収集
-    let blocks = ast["blocks"].as_array().context("no blocks in pandoc AST")?;
-    let (mermaid_indices, codes): (Vec<usize>, Vec<String>) = blocks
+fn collect_mermaid(blocks: &[Value]) -> Vec<(usize, String)> {
+    blocks
         .iter()
         .enumerate()
         .filter(|(_, b)| is_mermaid_block(b))
         .map(|(i, b)| (i, b["c"][1].as_str().unwrap_or("").to_string()))
-        .unzip();
+        .collect()
+}
 
-    if mermaid_indices.is_empty() {
+fn replace_blocks(blocks: &mut Vec<Value>, indices: &[usize], svgs: &[String]) {
+    for (&idx, svg) in indices.iter().zip(svgs.iter()) {
+        blocks[idx] = json!({ "t": "RawBlock", "c": ["html", svg] });
+    }
+}
+
+pub fn filter(input: &str, config: &RenderConfig) -> Result<String> {
+    let mut ast: Value = serde_json::from_str(input).context("invalid pandoc AST")?;
+
+    let mermaid = {
+        let blocks = ast["blocks"].as_array().context("no blocks in pandoc AST")?;
+        collect_mermaid(blocks)
+    };
+
+    if mermaid.is_empty() {
         return Ok(input.to_string());
     }
 
-    let svgs = render_all(codes, font_family, theme)?;
+    let (indices, codes): (Vec<usize>, Vec<String>) = mermaid.into_iter().unzip();
+    let svgs = render_all(codes, config)?;
 
-    // CodeBlock → RawBlock("html", svg) に置換
     if let Some(blocks_mut) = ast["blocks"].as_array_mut() {
-        for (&idx, svg) in mermaid_indices.iter().zip(svgs.iter()) {
-            blocks_mut[idx] = json!({ "t": "RawBlock", "c": ["html", svg] });
-        }
+        replace_blocks(blocks_mut, &indices, &svgs);
     }
 
     Ok(serde_json::to_string(&ast).context("failed to serialize pandoc AST")?)
@@ -77,15 +86,42 @@ mod tests {
     }
 
     #[test]
+    fn collect_mermaid_finds_correct_indices_and_codes() {
+        let blocks = vec![
+            json!({ "t": "Para", "c": [] }),
+            json!({ "t": "CodeBlock", "c": [["", ["mermaid"], []], "graph LR\n  A --> B"] }),
+            json!({ "t": "CodeBlock", "c": [["", ["rust"], []], "fn main() {}"] }),
+            json!({ "t": "CodeBlock", "c": [["", ["mermaid"], []], "graph TD\n  X --> Y"] }),
+        ];
+        let result = collect_mermaid(&blocks);
+        assert_eq!(result, vec![
+            (1, "graph LR\n  A --> B".to_string()),
+            (3, "graph TD\n  X --> Y".to_string()),
+        ]);
+    }
+
+    #[test]
+    fn replace_blocks_substitutes_at_correct_indices() {
+        let mut blocks = vec![
+            json!({ "t": "Para", "c": [] }),
+            json!({ "t": "CodeBlock", "c": [["", ["mermaid"], []], "graph LR"] }),
+        ];
+        replace_blocks(&mut blocks, &[1], &["<svg/>".to_string()]);
+        assert_eq!(blocks[0]["t"], "Para");
+        assert_eq!(blocks[1], json!({ "t": "RawBlock", "c": ["html", "<svg/>"] }));
+    }
+
+    #[test]
     fn filter_with_no_mermaid_blocks_returns_input_unchanged() {
         let input = r#"{"pandoc-api-version":[1,23],"meta":{},"blocks":[{"t":"Para","c":[]}]}"#;
-        let output = filter(input, None, None).unwrap();
+        let config = RenderConfig { font_family: None, theme: None };
+        let output = filter(input, &config).unwrap();
         assert_eq!(output, input);
     }
 
     #[test]
     fn filter_invalid_json_returns_error() {
-        let result = filter("not json", None, None);
-        assert!(result.is_err());
+        let config = RenderConfig { font_family: None, theme: None };
+        assert!(filter("not json", &config).is_err());
     }
 }

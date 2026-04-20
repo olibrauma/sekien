@@ -11,21 +11,32 @@ use winit::{
 
 const MERMAID_JS: &str = include_str!("../assets/mermaid.min.js");
 
-fn build_html(font_family: Option<&str>, theme: Option<&str>) -> String {
-    let font_family_js = match font_family {
-        Some(f) => format!(
-            "  fontFamily: {},\n",
-            serde_json::to_string(f).expect("serialize font family")
-        ),
-        None => String::new(),
-    };
-    let theme_js = match theme {
-        Some(t) => format!(
-            "  theme: {},\n",
-            serde_json::to_string(t).expect("serialize theme")
-        ),
-        None => String::new(),
-    };
+#[derive(Clone)]
+pub struct RenderConfig {
+    pub font_family: Option<String>,
+    pub theme: Option<String>,
+}
+
+// (key, value) のペアを mermaid.initialize() の設定行に変換する純粋関数
+fn mermaid_js_config(fields: &[(&str, &str)]) -> String {
+    fields
+        .iter()
+        .map(|(key, val)| format!(
+            "  {key}: {},\n",
+            serde_json::to_string(val).expect("serialize config field")
+        ))
+        .collect()
+}
+
+fn build_html(config: &RenderConfig) -> String {
+    let mut fields: Vec<(&str, &str)> = Vec::new();
+    if let Some(ref t) = config.theme {
+        fields.push(("theme", t));
+    }
+    if let Some(ref f) = config.font_family {
+        fields.push(("fontFamily", f));
+    }
+    let extra_config = mermaid_js_config(&fields);
     format!(
         r#"<!DOCTYPE html>
 <html>
@@ -37,7 +48,7 @@ fn build_html(font_family: Option<&str>, theme: Option<&str>) -> String {
 mermaid.initialize({{
   startOnLoad: false,
   htmlLabels: false,
-{theme_js}{font_family_js}}});
+{extra_config}}});
 
 window.renderMermaid = async function(id, code) {{
   try {{
@@ -53,8 +64,7 @@ window.ipc.postMessage(JSON.stringify({{ type: 'ready' }}));
 </body>
 </html>"#,
         mermaid = MERMAID_JS,
-        theme_js = theme_js,
-        font_family_js = font_family_js,
+        extra_config = extra_config,
     )
 }
 
@@ -66,8 +76,7 @@ struct App {
     error: Arc<Mutex<Option<String>>>,
     // レンダリング対象のブロック
     blocks: Vec<String>,
-    font_family: Option<String>,
-    theme: Option<String>,
+    config: RenderConfig,
     started: bool,
     // winit/wry ハンドル (resumed 後に初期化)
     _window: Option<Window>,
@@ -89,7 +98,7 @@ impl ApplicationHandler<String> for App {
 
         let proxy = self.proxy.clone();
         let webview = match WebViewBuilder::new(&window)
-            .with_html(build_html(self.font_family.as_deref(), self.theme.as_deref()))
+            .with_html(build_html(&self.config))
             .with_ipc_handler(move |req: wry::http::Request<String>| {
                 let _ = proxy.send_event(req.into_body());
             })
@@ -166,57 +175,71 @@ impl ApplicationHandler<String> for App {
 mod tests {
     use super::*;
 
-    #[test]
-    fn build_html_no_font_has_no_font_family() {
-        let html = build_html(None, None);
-        // mermaid.initialize() の設定ブロックに fontFamily: が追加されていないこと。
-        // (mermaid.min.js 自体に "fontFamily" は含まれるが、設定形式 "  fontFamily:" は含まれない)
-        assert!(!html.contains("  fontFamily:"));
+    fn cfg(font_family: Option<&str>, theme: Option<&str>) -> RenderConfig {
+        RenderConfig {
+            font_family: font_family.map(|s| s.to_string()),
+            theme: theme.map(|s| s.to_string()),
+        }
     }
 
     #[test]
-    fn build_html_normal_font() {
-        let html = build_html(Some("Arial"), None);
+    fn mermaid_js_config_empty() {
+        assert_eq!(mermaid_js_config(&[]), "");
+    }
+
+    #[test]
+    fn mermaid_js_config_single_field() {
+        assert_eq!(mermaid_js_config(&[("theme", "dark")]), "  theme: \"dark\",\n");
+    }
+
+    #[test]
+    fn mermaid_js_config_multiple_fields() {
+        let result = mermaid_js_config(&[("theme", "dark"), ("fontFamily", "Arial")]);
+        assert_eq!(result, "  theme: \"dark\",\n  fontFamily: \"Arial\",\n");
+    }
+
+    #[test]
+    fn build_html_no_options() {
+        let html = build_html(&cfg(None, None));
+        // mermaid.min.js 自体に "fontFamily" は含まれるが、設定形式 "  fontFamily:" は含まれない
+        assert!(!html.contains("  fontFamily:"));
+        assert!(!html.contains("  theme:"));
+    }
+
+    #[test]
+    fn build_html_with_font() {
+        let html = build_html(&cfg(Some("Arial"), None));
         assert!(html.contains("fontFamily: \"Arial\""));
     }
 
     #[test]
     fn build_html_font_single_quote_is_escaped() {
         // 修正前は fontFamily: ''; alert('xss'); '' となり JS インジェクション可能だった
-        let html = build_html(Some("'; alert('xss'); '"), None);
-        // JSON エンコードされているのでシングルクォートは文字列内に収まる
+        let html = build_html(&cfg(Some("'; alert('xss'); '"), None));
         assert!(html.contains("fontFamily: \"'; alert('xss'); '\""));
-        // 旧形式 (シングルクォート囲み) が生成されていないこと
         assert!(!html.contains("fontFamily: '"));
     }
 
     #[test]
     fn build_html_font_double_quote_is_escaped() {
-        let html = build_html(Some("Font\"Name"), None);
-        // serde_json が \" にエスケープする
+        let html = build_html(&cfg(Some("Font\"Name"), None));
         assert!(html.contains("fontFamily: \"Font\\\"Name\""));
     }
 
     #[test]
     fn build_html_font_backslash_is_escaped() {
-        let html = build_html(Some("Font\\Name"), None);
+        let html = build_html(&cfg(Some("Font\\Name"), None));
         assert!(html.contains("fontFamily: \"Font\\\\Name\""));
     }
 
     #[test]
     fn build_html_with_theme() {
-        let html = build_html(None, Some("dark"));
+        let html = build_html(&cfg(None, Some("dark")));
         assert!(html.contains("theme: \"dark\""));
-    }
-
-    #[test]
-    fn build_html_no_theme_has_no_theme_setting() {
-        let html = build_html(None, None);
-        assert!(!html.contains("  theme:"));
     }
 }
 
-pub fn render_all(blocks: Vec<String>, font_family: Option<&str>, theme: Option<&str>) -> Result<Vec<String>> {
+pub fn render_all(blocks: Vec<String>, config: &RenderConfig) -> Result<Vec<String>> {
     if blocks.is_empty() {
         return Ok(vec![]);
     }
@@ -234,8 +257,7 @@ pub fn render_all(blocks: Vec<String>, font_family: Option<&str>, theme: Option<
         results: Arc::clone(&results),
         error: Arc::clone(&error),
         blocks,
-        font_family: font_family.map(|s| s.to_string()),
-        theme: theme.map(|s| s.to_string()),
+        config: config.clone(),
         started: false,
         _window: None,
         webview: None,
