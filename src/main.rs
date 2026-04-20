@@ -19,13 +19,14 @@ Options:
   --font <font>          Font family for diagram text (default: mermaid.js default)
                          Also configurable via SEKIEN_FONT_FAMILY environment variable.
                          In pandoc filter mode, use the environment variable instead.
-  --print-lua-filter     Print the bundled Lua filter for typst PDF output (see below)
+  --print-lua-filter     Print the bundled Lua filter for non-HTML PDF output (see below)
   --version, -v          Show version
   --help, -h             Show this help
 
-Typst PDF output:
-  sekien outputs RawBlock(\"html\", svg) which typst drops. Use the bundled Lua filter
-  to convert SVG blocks to Image nodes that typst can include:
+Non-HTML PDF output:
+  sekien outputs RawBlock(\"html\", svg), which PDF engines that don't process raw HTML
+  (e.g. typst, pdflatex) will drop. Use the bundled Lua filter to convert SVG blocks
+  to Image nodes that these engines can include:
 
     sekien --print-lua-filter > sekien.lua
     pandoc input.md -o output.pdf --pdf-engine=typst --filter sekien --lua-filter sekien.lua

@@ -54,9 +54,9 @@ sekien は `RawBlock("html", svg)` を出力するため、HTML を経由しな�
 pandoc input.md -o output.pdf --filter sekien --pdf-engine=weasyprint
 ```
 
-#### typst で PDF 化する (Lua filter を使う)
+#### HTML を経由しない PDF engine (Lua filter を使う)
 
-typst は `RawBlock("html")` を drop するが、sekien に同梱の Lua filter で
+typst や pdflatex など raw HTML を drop する PDF engine では、sekien に同梱の Lua filter で
 SVG をファイルに書き出して Image ノードに変換することで回避できる。
 
 ```bash
