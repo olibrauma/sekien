@@ -10,7 +10,7 @@ fn is_mermaid_block(block: &Value) -> bool {
             .unwrap_or(false)
 }
 
-pub fn filter(input: &str, font_family: &str) -> Result<String> {
+pub fn filter(input: &str, font_family: Option<&str>) -> Result<String> {
     let mut ast: Value = serde_json::from_str(input).context("invalid pandoc AST")?;
 
     // Mermaid ブロックを収集

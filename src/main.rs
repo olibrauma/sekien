@@ -5,7 +5,6 @@ use anyhow::{Context, Result};
 use std::fs;
 use std::io::{self, Read};
 
-const DEFAULT_FONT_FAMILY: &str = "Noto Sans JP, sans-serif";
 const LUA_FILTER: &str = include_str!("../assets/sekien.lua");
 
 fn usage() -> &'static str {
@@ -17,7 +16,7 @@ Usage:
   pandoc --filter sekien                     Pandoc filter (called automatically by pandoc)
 
 Options:
-  --font-family <font>   Font family for diagram text (default: \"Noto Sans JP, sans-serif\")
+  --font-family <font>   Font family for diagram text (default: mermaid.js default)
                          Also configurable via SEKIEN_FONT_FAMILY environment variable.
                          In pandoc filter mode, use the environment variable instead.
   --print-lua-filter     Print the bundled Lua filter for typst PDF output (see below)
@@ -90,9 +89,8 @@ fn parse_args(raw: Vec<String>) -> Result<Args, String> {
     Ok(Args { font_family, command })
 }
 
-fn resolve_font_family(flag: Option<String>) -> String {
+fn resolve_font_family(flag: Option<String>) -> Option<String> {
     flag.or_else(|| std::env::var("SEKIEN_FONT_FAMILY").ok())
-        .unwrap_or_else(|| DEFAULT_FONT_FAMILY.to_string())
 }
 
 fn read_mermaid(file_path: Option<&str>) -> Result<String> {
@@ -129,11 +127,11 @@ fn main() -> Result<()> {
         Command::PandocFilter => {
             let mut input = String::new();
             io::stdin().read_to_string(&mut input)?;
-            print!("{}", pandoc::filter(&input, &font_family)?);
+            print!("{}", pandoc::filter(&input, font_family.as_deref())?);
         }
         Command::Render { file } => {
             let code = read_mermaid(file.as_deref())?;
-            let svgs = renderer::render_all(vec![code], &font_family)?;
+            let svgs = renderer::render_all(vec![code], font_family.as_deref())?;
             println!("{}", svgs[0]);
         }
     }

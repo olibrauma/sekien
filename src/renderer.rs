@@ -11,7 +11,11 @@ use winit::{
 
 const MERMAID_JS: &str = include_str!("../assets/mermaid.min.js");
 
-fn build_html(font_family: &str) -> String {
+fn build_html(font_family: Option<&str>) -> String {
+    let font_family_js = match font_family {
+        Some(f) => format!("  fontFamily: '{}',\n", f),
+        None => String::new(),
+    };
     format!(
         r#"<!DOCTYPE html>
 <html>
@@ -24,8 +28,7 @@ mermaid.initialize({{
   startOnLoad: false,
   htmlLabels: false,
   theme: 'default',
-  fontFamily: '{font_family}'
-}});
+{font_family_js}}});
 
 window.renderMermaid = async function(id, code) {{
   try {{
@@ -41,7 +44,7 @@ window.ipc.postMessage(JSON.stringify({{ type: 'ready' }}));
 </body>
 </html>"#,
         mermaid = MERMAID_JS,
-        font_family = font_family,
+        font_family_js = font_family_js,
     )
 }
 
@@ -53,7 +56,7 @@ struct App {
     error: Arc<Mutex<Option<String>>>,
     // レンダリング対象のブロック
     blocks: Vec<String>,
-    font_family: String,
+    font_family: Option<String>,
     current: usize,
     started: bool,
     // winit/wry ハンドル (resumed 後に初期化)
@@ -76,7 +79,7 @@ impl ApplicationHandler<String> for App {
 
         let proxy = self.proxy.clone();
         let webview = match WebViewBuilder::new(&window)
-            .with_html(build_html(&self.font_family))
+            .with_html(build_html(self.font_family.as_deref()))
             .with_ipc_handler(move |req: wry::http::Request<String>| {
                 let _ = proxy.send_event(req.into_body());
             })
@@ -149,7 +152,7 @@ impl ApplicationHandler<String> for App {
     }
 }
 
-pub fn render_all(blocks: Vec<String>, font_family: &str) -> Result<Vec<String>> {
+pub fn render_all(blocks: Vec<String>, font_family: Option<&str>) -> Result<Vec<String>> {
     if blocks.is_empty() {
         return Ok(vec![]);
     }
@@ -167,7 +170,7 @@ pub fn render_all(blocks: Vec<String>, font_family: &str) -> Result<Vec<String>>
         results: Arc::clone(&results),
         error: Arc::clone(&error),
         blocks,
-        font_family: font_family.to_string(),
+        font_family: font_family.map(|s| s.to_string()),
         current: 0,
         started: false,
         _window: None,
