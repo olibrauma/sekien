@@ -155,6 +155,48 @@ impl ApplicationHandler<String> for App {
     }
 }
 
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn build_html_no_font_has_no_font_family() {
+        let html = build_html(None);
+        // mermaid.initialize() の設定ブロックに fontFamily: が追加されていないこと。
+        // (mermaid.min.js 自体に "fontFamily" は含まれるが、設定形式 "  fontFamily:" は含まれない)
+        assert!(!html.contains("  fontFamily:"));
+    }
+
+    #[test]
+    fn build_html_normal_font() {
+        let html = build_html(Some("Arial"));
+        assert!(html.contains("fontFamily: \"Arial\""));
+    }
+
+    #[test]
+    fn build_html_font_single_quote_is_escaped() {
+        // 修正前は fontFamily: ''; alert('xss'); '' となり JS インジェクション可能だった
+        let html = build_html(Some("'; alert('xss'); '"));
+        // JSON エンコードされているのでシングルクォートは文字列内に収まる
+        assert!(html.contains("fontFamily: \"'; alert('xss'); '\""));
+        // 旧形式 (シングルクォート囲み) が生成されていないこと
+        assert!(!html.contains("fontFamily: '"));
+    }
+
+    #[test]
+    fn build_html_font_double_quote_is_escaped() {
+        let html = build_html(Some("Font\"Name"));
+        // serde_json が \" にエスケープする
+        assert!(html.contains("fontFamily: \"Font\\\"Name\""));
+    }
+
+    #[test]
+    fn build_html_font_backslash_is_escaped() {
+        let html = build_html(Some("Font\\Name"));
+        assert!(html.contains("fontFamily: \"Font\\\\Name\""));
+    }
+}
+
 pub fn render_all(blocks: Vec<String>, font_family: Option<&str>) -> Result<Vec<String>> {
     if blocks.is_empty() {
         return Ok(vec![]);

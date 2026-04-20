@@ -36,3 +36,55 @@ pub fn filter(input: &str, font_family: Option<&str>) -> Result<String> {
 
     Ok(serde_json::to_string(&ast).context("failed to serialize pandoc AST")?)
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use serde_json::json;
+
+    #[test]
+    fn mermaid_codeblock_is_detected() {
+        let block = json!({
+            "t": "CodeBlock",
+            "c": [["", ["mermaid"], []], "graph LR\n  A --> B"]
+        });
+        assert!(is_mermaid_block(&block));
+    }
+
+    #[test]
+    fn non_mermaid_codeblock_is_ignored() {
+        let block = json!({
+            "t": "CodeBlock",
+            "c": [["", ["rust"], []], "fn main() {}"]
+        });
+        assert!(!is_mermaid_block(&block));
+    }
+
+    #[test]
+    fn non_codeblock_is_ignored() {
+        let block = json!({ "t": "Para", "c": [] });
+        assert!(!is_mermaid_block(&block));
+    }
+
+    #[test]
+    fn codeblock_with_multiple_classes_including_mermaid() {
+        let block = json!({
+            "t": "CodeBlock",
+            "c": [["", ["language-mermaid", "mermaid"], []], "graph LR\n  A --> B"]
+        });
+        assert!(is_mermaid_block(&block));
+    }
+
+    #[test]
+    fn filter_with_no_mermaid_blocks_returns_input_unchanged() {
+        let input = r#"{"pandoc-api-version":[1,23],"meta":{},"blocks":[{"t":"Para","c":[]}]}"#;
+        let output = filter(input, None).unwrap();
+        assert_eq!(output, input);
+    }
+
+    #[test]
+    fn filter_invalid_json_returns_error() {
+        let result = filter("not json", None);
+        assert!(result.is_err());
+    }
+}

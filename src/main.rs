@@ -105,6 +105,108 @@ fn read_mermaid(file_path: Option<&str>) -> Result<String> {
     }
 }
 
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn args(v: &[&str]) -> Vec<String> {
+        v.iter().map(|s| s.to_string()).collect()
+    }
+
+    #[test]
+    fn help_long() {
+        let a = parse_args(args(&["--help"])).unwrap();
+        assert!(matches!(a.command, Command::Help));
+    }
+
+    #[test]
+    fn help_short() {
+        let a = parse_args(args(&["-h"])).unwrap();
+        assert!(matches!(a.command, Command::Help));
+    }
+
+    #[test]
+    fn version_long() {
+        let a = parse_args(args(&["--version"])).unwrap();
+        assert!(matches!(a.command, Command::Version));
+    }
+
+    #[test]
+    fn version_short() {
+        let a = parse_args(args(&["-v"])).unwrap();
+        assert!(matches!(a.command, Command::Version));
+    }
+
+    #[test]
+    fn print_lua_filter() {
+        let a = parse_args(args(&["--print-lua-filter"])).unwrap();
+        assert!(matches!(a.command, Command::PrintLuaFilter));
+    }
+
+    // pandoc は `sekien <format>` で呼び出す。フォーマット名はドット・スラッシュ・ハイフンを含まない。
+    #[test]
+    fn pandoc_filter_mode_common_formats() {
+        for fmt in &["html", "latex", "markdown", "docx", "rst"] {
+            let a = parse_args(args(&[fmt])).unwrap();
+            assert!(
+                matches!(a.command, Command::PandocFilter),
+                "expected PandocFilter for format: {fmt}"
+            );
+        }
+    }
+
+    #[test]
+    fn render_no_args() {
+        let a = parse_args(args(&[])).unwrap();
+        assert!(matches!(a.command, Command::Render { file: None }));
+    }
+
+    #[test]
+    fn render_with_file() {
+        let a = parse_args(args(&["diagram.mmd"])).unwrap();
+        assert!(matches!(
+            a.command,
+            Command::Render { ref file } if file.as_deref() == Some("diagram.mmd")
+        ));
+    }
+
+    #[test]
+    fn file_with_dot_is_render_not_pandoc() {
+        // "diagram.mmd" はドットを含むので Render モード
+        let a = parse_args(args(&["diagram.mmd"])).unwrap();
+        assert!(matches!(a.command, Command::Render { .. }));
+    }
+
+    #[test]
+    fn file_with_slash_is_render_not_pandoc() {
+        let a = parse_args(args(&["./diagram.mmd"])).unwrap();
+        assert!(matches!(a.command, Command::Render { .. }));
+    }
+
+    #[test]
+    fn font_flag() {
+        let a = parse_args(args(&["--font", "Arial"])).unwrap();
+        assert_eq!(a.font_family, Some("Arial".to_string()));
+    }
+
+    #[test]
+    fn font_flag_with_file() {
+        let a = parse_args(args(&["--font", "Arial", "diagram.mmd"])).unwrap();
+        assert_eq!(a.font_family, Some("Arial".to_string()));
+        assert!(matches!(a.command, Command::Render { .. }));
+    }
+
+    #[test]
+    fn font_flag_missing_value_is_error() {
+        assert!(parse_args(args(&["--font"])).is_err());
+    }
+
+    #[test]
+    fn too_many_files_is_error() {
+        assert!(parse_args(args(&["a.mmd", "b.mmd"])).is_err());
+    }
+}
+
 fn main() -> Result<()> {
     let raw: Vec<String> = std::env::args().skip(1).collect();
 
