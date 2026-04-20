@@ -164,11 +164,14 @@ Ubuntu 22.04 以降や Fedora など主要なデスクトップ環境では XWay
 ## ビルド
 
 ```bash
-# assets/ に mermaid.js を用意する (初回のみ)
+cargo build --release
+```
+
+`assets/mermaid.min.js` はリポジトリに同梱済み。更新する場合は npm から取得して差し替える。
+
+```bash
 npm install mermaid
 cp node_modules/mermaid/dist/mermaid.min.js assets/
-
-cargo build --release
 ```
 
 ## 構成
