@@ -103,10 +103,22 @@ pandoc input.md -o output.pdf \
 sekien --font "Hiragino Sans" diagram.mmd > diagram.svg
 
 # 環境変数で指定 (pandoc filter モードでも有効)
-export SEKIEN_FONT_FAMILY="Hiragino Sans, Noto Sans JP, sans-serif"
+export SEKIEN_FONT="Hiragino Sans, Noto Sans JP, sans-serif"
 ```
 
 pandoc filter モードでは pandoc がフラグを渡せないため、環境変数を使う。
+
+### テーマの指定
+
+`SEKIEN_THEME` 環境変数で mermaid.js のテーマを指定できる。
+未指定時は mermaid.js のデフォルト (`default`) が使われる。
+
+```bash
+SEKIEN_THEME=dark sekien diagram.mmd > diagram.svg
+SEKIEN_THEME=forest pandoc input.md -o output.html --filter sekien
+```
+
+指定できる値: `default` / `dark` / `forest` / `base` / `neutral`
 
 ## ビルド
 

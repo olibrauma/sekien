@@ -17,11 +17,15 @@ Usage:
 
 Options:
   --font <font>          Font family for diagram text (default: mermaid.js default)
-                         Also configurable via SEKIEN_FONT_FAMILY environment variable.
+                         Also configurable via SEKIEN_FONT env var.
                          In pandoc filter mode, use the environment variable instead.
   --print-lua-filter     Print the bundled Lua filter for non-HTML PDF output (see below)
   --version, -v          Show version
   --help, -h             Show this help
+
+Environment variables:
+  SEKIEN_FONT            Font family (same as --font)
+  SEKIEN_THEME           Mermaid theme: default | dark | forest | base | neutral
 
 Non-HTML PDF output:
   sekien outputs RawBlock(\"html\", svg), which PDF engines that don't process raw HTML
@@ -91,7 +95,7 @@ fn parse_args(raw: Vec<String>) -> Result<Args, String> {
 }
 
 fn resolve_font_family(flag: Option<String>) -> Option<String> {
-    flag.or_else(|| std::env::var("SEKIEN_FONT_FAMILY").ok())
+    flag.or_else(|| std::env::var("SEKIEN_FONT").ok())
 }
 
 fn resolve_theme() -> Option<String> {
