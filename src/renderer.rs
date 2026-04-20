@@ -11,11 +11,18 @@ use winit::{
 
 const MERMAID_JS: &str = include_str!("../assets/mermaid.min.js");
 
-fn build_html(font_family: Option<&str>) -> String {
+fn build_html(font_family: Option<&str>, theme: Option<&str>) -> String {
     let font_family_js = match font_family {
         Some(f) => format!(
             "  fontFamily: {},\n",
             serde_json::to_string(f).expect("serialize font family")
+        ),
+        None => String::new(),
+    };
+    let theme_js = match theme {
+        Some(t) => format!(
+            "  theme: {},\n",
+            serde_json::to_string(t).expect("serialize theme")
         ),
         None => String::new(),
     };
@@ -30,8 +37,7 @@ fn build_html(font_family: Option<&str>) -> String {
 mermaid.initialize({{
   startOnLoad: false,
   htmlLabels: false,
-  theme: 'default',
-{font_family_js}}});
+{theme_js}{font_family_js}}});
 
 window.renderMermaid = async function(id, code) {{
   try {{
@@ -47,6 +53,7 @@ window.ipc.postMessage(JSON.stringify({{ type: 'ready' }}));
 </body>
 </html>"#,
         mermaid = MERMAID_JS,
+        theme_js = theme_js,
         font_family_js = font_family_js,
     )
 }
@@ -60,6 +67,7 @@ struct App {
     // レンダリング対象のブロック
     blocks: Vec<String>,
     font_family: Option<String>,
+    theme: Option<String>,
     current: usize,
     started: bool,
     // winit/wry ハンドル (resumed 後に初期化)
@@ -82,7 +90,7 @@ impl ApplicationHandler<String> for App {
 
         let proxy = self.proxy.clone();
         let webview = match WebViewBuilder::new(&window)
-            .with_html(build_html(self.font_family.as_deref()))
+            .with_html(build_html(self.font_family.as_deref(), self.theme.as_deref()))
             .with_ipc_handler(move |req: wry::http::Request<String>| {
                 let _ = proxy.send_event(req.into_body());
             })
@@ -160,7 +168,7 @@ mod tests {
 
     #[test]
     fn build_html_no_font_has_no_font_family() {
-        let html = build_html(None);
+        let html = build_html(None, None);
         // mermaid.initialize() の設定ブロックに fontFamily: が追加されていないこと。
         // (mermaid.min.js 自体に "fontFamily" は含まれるが、設定形式 "  fontFamily:" は含まれない)
         assert!(!html.contains("  fontFamily:"));
@@ -168,14 +176,14 @@ mod tests {
 
     #[test]
     fn build_html_normal_font() {
-        let html = build_html(Some("Arial"));
+        let html = build_html(Some("Arial"), None);
         assert!(html.contains("fontFamily: \"Arial\""));
     }
 
     #[test]
     fn build_html_font_single_quote_is_escaped() {
         // 修正前は fontFamily: ''; alert('xss'); '' となり JS インジェクション可能だった
-        let html = build_html(Some("'; alert('xss'); '"));
+        let html = build_html(Some("'; alert('xss'); '"), None);
         // JSON エンコードされているのでシングルクォートは文字列内に収まる
         assert!(html.contains("fontFamily: \"'; alert('xss'); '\""));
         // 旧形式 (シングルクォート囲み) が生成されていないこと
@@ -184,19 +192,31 @@ mod tests {
 
     #[test]
     fn build_html_font_double_quote_is_escaped() {
-        let html = build_html(Some("Font\"Name"));
+        let html = build_html(Some("Font\"Name"), None);
         // serde_json が \" にエスケープする
         assert!(html.contains("fontFamily: \"Font\\\"Name\""));
     }
 
     #[test]
     fn build_html_font_backslash_is_escaped() {
-        let html = build_html(Some("Font\\Name"));
+        let html = build_html(Some("Font\\Name"), None);
         assert!(html.contains("fontFamily: \"Font\\\\Name\""));
+    }
+
+    #[test]
+    fn build_html_with_theme() {
+        let html = build_html(None, Some("dark"));
+        assert!(html.contains("theme: \"dark\""));
+    }
+
+    #[test]
+    fn build_html_no_theme_has_no_theme_setting() {
+        let html = build_html(None, None);
+        assert!(!html.contains("  theme:"));
     }
 }
 
-pub fn render_all(blocks: Vec<String>, font_family: Option<&str>) -> Result<Vec<String>> {
+pub fn render_all(blocks: Vec<String>, font_family: Option<&str>, theme: Option<&str>) -> Result<Vec<String>> {
     if blocks.is_empty() {
         return Ok(vec![]);
     }
@@ -215,6 +235,7 @@ pub fn render_all(blocks: Vec<String>, font_family: Option<&str>) -> Result<Vec<
         error: Arc::clone(&error),
         blocks,
         font_family: font_family.map(|s| s.to_string()),
+        theme: theme.map(|s| s.to_string()),
         current: 0,
         started: false,
         _window: None,

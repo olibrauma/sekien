@@ -94,6 +94,10 @@ fn resolve_font_family(flag: Option<String>) -> Option<String> {
     flag.or_else(|| std::env::var("SEKIEN_FONT_FAMILY").ok())
 }
 
+fn resolve_theme() -> Option<String> {
+    std::env::var("SEKIEN_THEME").ok()
+}
+
 fn read_mermaid(file_path: Option<&str>) -> Result<String> {
     match file_path {
         Some(p) => fs::read_to_string(p).with_context(|| format!("cannot read '{p}'")),
@@ -216,6 +220,7 @@ fn main() -> Result<()> {
     });
 
     let font_family = resolve_font_family(args.font_family);
+    let theme = resolve_theme();
 
     match args.command {
         Command::Help => {
@@ -230,11 +235,11 @@ fn main() -> Result<()> {
         Command::PandocFilter => {
             let mut input = String::new();
             io::stdin().read_to_string(&mut input)?;
-            print!("{}", pandoc::filter(&input, font_family.as_deref())?);
+            print!("{}", pandoc::filter(&input, font_family.as_deref(), theme.as_deref())?);
         }
         Command::Render { file } => {
             let code = read_mermaid(file.as_deref())?;
-            let svgs = renderer::render_all(vec![code], font_family.as_deref())?;
+            let svgs = renderer::render_all(vec![code], font_family.as_deref(), theme.as_deref())?;
             println!("{}", svgs[0]);
         }
     }

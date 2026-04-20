@@ -10,7 +10,7 @@ fn is_mermaid_block(block: &Value) -> bool {
             .unwrap_or(false)
 }
 
-pub fn filter(input: &str, font_family: Option<&str>) -> Result<String> {
+pub fn filter(input: &str, font_family: Option<&str>, theme: Option<&str>) -> Result<String> {
     let mut ast: Value = serde_json::from_str(input).context("invalid pandoc AST")?;
 
     // Mermaid ブロックを収集
@@ -26,7 +26,7 @@ pub fn filter(input: &str, font_family: Option<&str>) -> Result<String> {
         return Ok(input.to_string());
     }
 
-    let svgs = render_all(codes, font_family)?;
+    let svgs = render_all(codes, font_family, theme)?;
 
     // CodeBlock → RawBlock("html", svg) に置換
     let blocks_mut = ast["blocks"].as_array_mut().unwrap();
@@ -78,13 +78,13 @@ mod tests {
     #[test]
     fn filter_with_no_mermaid_blocks_returns_input_unchanged() {
         let input = r#"{"pandoc-api-version":[1,23],"meta":{},"blocks":[{"t":"Para","c":[]}]}"#;
-        let output = filter(input, None).unwrap();
+        let output = filter(input, None, None).unwrap();
         assert_eq!(output, input);
     }
 
     #[test]
     fn filter_invalid_json_returns_error() {
-        let result = filter("not json", None);
+        let result = filter("not json", None, None);
         assert!(result.is_err());
     }
 }
