@@ -17,26 +17,14 @@ pub struct RenderConfig {
     pub theme: Option<String>,
 }
 
-// (key, value) のペアを mermaid.initialize() の設定行に変換する純粋関数
-fn mermaid_js_config(fields: &[(&str, &str)]) -> String {
-    fields
-        .iter()
-        .map(|(key, val)| format!(
-            "  {key}: {},\n",
-            serde_json::to_string(val).expect("serialize config field")
-        ))
-        .collect()
-}
-
 fn build_html(config: &RenderConfig) -> String {
-    let mut fields: Vec<(&str, &str)> = Vec::new();
-    if let Some(ref t) = config.theme {
-        fields.push(("theme", t));
-    }
-    if let Some(ref f) = config.font_family {
-        fields.push(("fontFamily", f));
-    }
-    let extra_config = mermaid_js_config(&fields);
+    let extra_config: String = [("theme", &config.theme), ("fontFamily", &config.font_family)]
+        .iter()
+        .filter_map(|(k, v)| v.as_deref().map(|v| format!(
+            "  {k}: {},\n",
+            serde_json::to_string(v).expect("serialize config field")
+        )))
+        .collect();
     format!(
         r#"<!DOCTYPE html>
 <html>
@@ -180,22 +168,6 @@ mod tests {
             font_family: font_family.map(|s| s.to_string()),
             theme: theme.map(|s| s.to_string()),
         }
-    }
-
-    #[test]
-    fn mermaid_js_config_empty() {
-        assert_eq!(mermaid_js_config(&[]), "");
-    }
-
-    #[test]
-    fn mermaid_js_config_single_field() {
-        assert_eq!(mermaid_js_config(&[("theme", "dark")]), "  theme: \"dark\",\n");
-    }
-
-    #[test]
-    fn mermaid_js_config_multiple_fields() {
-        let result = mermaid_js_config(&[("theme", "dark"), ("fontFamily", "Arial")]);
-        assert_eq!(result, "  theme: \"dark\",\n  fontFamily: \"Arial\",\n");
     }
 
     #[test]

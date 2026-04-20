@@ -19,12 +19,6 @@ fn collect_mermaid(blocks: &[Value]) -> Vec<(usize, String)> {
         .collect()
 }
 
-fn replace_blocks(blocks: &mut Vec<Value>, indices: &[usize], svgs: &[String]) {
-    for (&idx, svg) in indices.iter().zip(svgs.iter()) {
-        blocks[idx] = json!({ "t": "RawBlock", "c": ["html", svg] });
-    }
-}
-
 pub fn filter(input: &str, config: &RenderConfig) -> Result<String> {
     let mut ast: Value = serde_json::from_str(input).context("invalid pandoc AST")?;
 
@@ -41,7 +35,9 @@ pub fn filter(input: &str, config: &RenderConfig) -> Result<String> {
     let svgs = render_all(codes, config)?;
 
     if let Some(blocks_mut) = ast["blocks"].as_array_mut() {
-        replace_blocks(blocks_mut, &indices, &svgs);
+        for (&idx, svg) in indices.iter().zip(svgs.iter()) {
+            blocks_mut[idx] = json!({ "t": "RawBlock", "c": ["html", svg] });
+        }
     }
 
     Ok(serde_json::to_string(&ast).context("failed to serialize pandoc AST")?)
@@ -98,17 +94,6 @@ mod tests {
             (1, "graph LR\n  A --> B".to_string()),
             (3, "graph TD\n  X --> Y".to_string()),
         ]);
-    }
-
-    #[test]
-    fn replace_blocks_substitutes_at_correct_indices() {
-        let mut blocks = vec![
-            json!({ "t": "Para", "c": [] }),
-            json!({ "t": "CodeBlock", "c": [["", ["mermaid"], []], "graph LR"] }),
-        ];
-        replace_blocks(&mut blocks, &[1], &["<svg/>".to_string()]);
-        assert_eq!(blocks[0]["t"], "Para");
-        assert_eq!(blocks[1], json!({ "t": "RawBlock", "c": ["html", "<svg/>"] }));
     }
 
     #[test]

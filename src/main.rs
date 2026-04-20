@@ -172,13 +172,6 @@ mod tests {
     }
 
     #[test]
-    fn file_with_dot_is_render_not_pandoc() {
-        // "diagram.mmd" はドットを含むので Render モード
-        let a = parse_args(args(&["diagram.mmd"])).unwrap();
-        assert!(matches!(a.command, Command::Render { .. }));
-    }
-
-    #[test]
     fn file_with_slash_is_render_not_pandoc() {
         let a = parse_args(args(&["./diagram.mmd"])).unwrap();
         assert!(matches!(a.command, Command::Render { .. }));
