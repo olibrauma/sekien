@@ -120,6 +120,34 @@ SEKIEN_THEME=forest pandoc input.md -o output.html --filter sekien
 
 指定できる値: `default` / `dark` / `forest` / `base` / `neutral`
 
+### Linux での使い方
+
+sekien は OS ネイティブの WebView (WebKitGTK) を使うため、Linux ではディスプレイ接続が必要。
+
+**Wayland 環境**
+
+Wayland ネイティブは未対応。XWayland 経由で動作する。
+
+```bash
+GDK_BACKEND=x11 sekien diagram.mmd > diagram.svg
+```
+
+Ubuntu 22.04 以降や Fedora など主要なデスクトップ環境では XWayland がデフォルトで利用可能。
+
+**ディスプレイなし環境 (サーバー・CI)**
+
+`xvfb-run` で仮想 X11 ディスプレイを立ち上げてから実行する。
+
+```bash
+xvfb-run sekien diagram.mmd > diagram.svg
+```
+
+GitHub Actions では:
+
+```yaml
+- run: xvfb-run cargo test
+```
+
 ## ビルド
 
 ```bash
