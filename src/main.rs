@@ -11,16 +11,16 @@ fn usage() -> &'static str {
     "sekien — Mermaid Drawer
 
 Usage:
-  sekien [--font-family <font>] [file.mmd]   Mermaid → SVG (stdout)
+  sekien [--font <font>] [file.mmd]   Mermaid → SVG (stdout)
   cat diagram.mmd | sekien                   Mermaid → SVG (stdout)
   pandoc --filter sekien                     Pandoc filter (called automatically by pandoc)
 
 Options:
-  --font-family <font>   Font family for diagram text (default: mermaid.js default)
+  --font <font>          Font family for diagram text (default: mermaid.js default)
                          Also configurable via SEKIEN_FONT_FAMILY environment variable.
                          In pandoc filter mode, use the environment variable instead.
   --print-lua-filter     Print the bundled Lua filter for typst PDF output (see below)
-  --version, -V          Show version
+  --version, -v          Show version
   --help, -h             Show this help
 
 Typst PDF output:
@@ -57,10 +57,10 @@ fn parse_args(raw: Vec<String>) -> Result<Args, String> {
     while let Some(arg) = iter.next() {
         match arg.as_str() {
             "--help" | "-h"         => return Ok(Args { font_family: None, command: Command::Help }),
-            "--version" | "-V"      => return Ok(Args { font_family: None, command: Command::Version }),
+            "--version" | "-v"      => return Ok(Args { font_family: None, command: Command::Version }),
             "--print-lua-filter"    => return Ok(Args { font_family: None, command: Command::PrintLuaFilter }),
-            "--font-family" => {
-                font_family = Some(iter.next().ok_or("--font-family requires a value")?);
+            "--font" => {
+                font_family = Some(iter.next().ok_or("--font requires a value")?);
             }
             _ => rest.push(arg),
         }
