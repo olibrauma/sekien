@@ -13,7 +13,10 @@ const MERMAID_JS: &str = include_str!("../assets/mermaid.min.js");
 
 fn build_html(font_family: Option<&str>) -> String {
     let font_family_js = match font_family {
-        Some(f) => format!("  fontFamily: '{}',\n", f),
+        Some(f) => format!(
+            "  fontFamily: {},\n",
+            serde_json::to_string(f).expect("serialize font family")
+        ),
         None => String::new(),
     };
     format!(
