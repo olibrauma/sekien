@@ -17,7 +17,15 @@ sekien is a drawer of Mermaids — Mermaid コードを SVG に変換する CLI 
 
 速度・サイズともに優位なのは Chromium をバンドルせず OS の WebView を使うため。
 
+## インストール
+
+```bash
+cargo install sekien
+```
+
 ## 使い方
+
+### スタンドアロンモード
 
 ```bash
 # .mmd ファイル → SVG (stdout)
@@ -25,12 +33,9 @@ sekien diagram.mmd > diagram.svg
 
 # stdin → SVG (stdout)
 cat diagram.mmd | sekien > diagram.svg
-
-# Pandoc filter として使う (HTML 出力に SVG がインラインで埋め込まれる)
-pandoc input.md -o output.html --filter sekien
 ```
 
-### 注意: ファイル名に拡張子をつけること
+#### 注意: ファイル名に拡張子をつけること
 
 sekien は引数がファイルパス (`.` を含む) かどうかで動作モードを切り替える。
 `.mmd` などの拡張子なしでファイルを渡すと、誤って Pandoc filter モードと判定される。
@@ -40,7 +45,13 @@ sekien diagram      # NG: filter モードと判定される
 sekien diagram.mmd  # OK
 ```
 
-### 対応 PDF engine
+### Pandoc filter モード
+
+```bash
+pandoc input.md -o output.html --filter sekien
+```
+
+#### 対応 PDF engine
 
 sekien は `RawBlock("html", svg)` を出力するため、HTML を経由しないエンジンでは SVG が落とされる。
 
@@ -49,10 +60,6 @@ sekien は `RawBlock("html", svg)` を出力するため、HTML を経由しな�
 | `weasyprint` | ✓ (HTML 経由) |
 | `pdflatex` / `xelatex` / `lualatex` | ✗ (raw HTML を drop) |
 | `typst` | ✗ (raw HTML を drop) — Lua filter で回避可能 |
-
-```bash
-pandoc input.md -o output.pdf --filter sekien --pdf-engine=weasyprint
-```
 
 #### HTML を経由しない PDF engine (Lua filter を使う)
 
@@ -92,7 +99,9 @@ pandoc input.md -o output.pdf \
   -V mainfont="Hiragino Sans"
 ```
 
-### フォントの指定
+## オプション
+
+### `--font`
 
 デフォルトは mermaid.js のデフォルト (`"trebuchet ms", verdana, arial, sans-serif`) で、
 未指定時はシステムのフォントフォールバックが効く。
@@ -108,7 +117,7 @@ export SEKIEN_FONT="Hiragino Sans, Noto Sans JP, sans-serif"
 
 pandoc filter モードでは pandoc がフラグを渡せないため、環境変数を使う。
 
-### テーマの指定
+### `--theme`
 
 `SEKIEN_THEME` 環境変数で mermaid.js のテーマを指定できる。
 未指定時は mermaid.js のデフォルト (`default`) が使われる。
@@ -120,24 +129,16 @@ SEKIEN_THEME=forest pandoc input.md -o output.html --filter sekien
 
 指定できる値: `default` / `dark` / `forest` / `base` / `neutral`
 
-### Linux での使い方
+## 注意: ディスプレイ接続が必要
 
-sekien は OS ネイティブの WebView (WebKitGTK) を使うため、Linux ではディスプレイ接続が必要。
+sekien は OS ネイティブの WebView を使うため、いずれの OS でもディスプレイ接続が必要。
+ディスプレイなし環境で実行するには下記「ヘッドレス実行」を参照。
 
-**Wayland 環境**
+## ヘッドレス実行 (Linux)
 
-Wayland ネイティブは未検証。動作しない場合は `GDK_BACKEND=x11` で X11 バックエンドを強制すると
-XWayland 経由で動作する可能性がある。
+### X11
 
-```bash
-GDK_BACKEND=x11 sekien diagram.mmd > diagram.svg
-```
-
-Ubuntu 22.04 以降や Fedora など主要なデスクトップ環境では XWayland がデフォルトで利用可能。
-
-**ディスプレイなし環境 (サーバー・CI)**
-
-`xvfb-run` で仮想 X11 ディスプレイを立ち上げてから実行する。
+未検証。`xvfb-run` で仮想ディスプレイを立ち上げると動作する可能性がある。
 
 ```bash
 xvfb-run sekien diagram.mmd > diagram.svg
@@ -148,6 +149,17 @@ GitHub Actions では:
 ```yaml
 - run: xvfb-run cargo test
 ```
+
+### Wayland
+
+未検証。動作しない場合は `GDK_BACKEND=x11` で X11 バックエンドを強制すると
+XWayland 経由で動作する可能性がある。
+
+```bash
+GDK_BACKEND=x11 sekien diagram.mmd > diagram.svg
+```
+
+Ubuntu 22.04 以降や Fedora など主要なデスクトップ環境では XWayland がデフォルトで利用可能。
 
 ## ビルド
 
