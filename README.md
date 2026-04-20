@@ -126,7 +126,8 @@ sekien は OS ネイティブの WebView (WebKitGTK) を使うため、Linux で
 
 **Wayland 環境**
 
-Wayland ネイティブは未対応。XWayland 経由で動作する。
+Wayland ネイティブは未検証。動作しない場合は `GDK_BACKEND=x11` で X11 バックエンドを強制すると
+XWayland 経由で動作する可能性がある。
 
 ```bash
 GDK_BACKEND=x11 sekien diagram.mmd > diagram.svg
