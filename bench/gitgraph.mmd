@@ -1,0 +1,32 @@
+gitGraph
+    commit id: "init"
+    commit id: "add README"
+
+    branch develop
+    checkout develop
+    commit id: "setup project"
+    commit id: "add auth module"
+
+    branch feature/login
+    checkout feature/login
+    commit id: "login form"
+    commit id: "validate input"
+    commit id: "add tests"
+
+    checkout develop
+    merge feature/login id: "merge login"
+
+    branch feature/signup
+    checkout feature/signup
+    commit id: "signup form"
+    commit id: "email verification"
+
+    checkout develop
+    merge feature/signup id: "merge signup"
+    commit id: "integration tests"
+
+    checkout main
+    merge develop id: "release v1.0" tag: "v1.0"
+
+    checkout develop
+    commit id: "start v1.1"

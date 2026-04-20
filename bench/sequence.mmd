@@ -1,0 +1,26 @@
+sequenceDiagram
+    actor User
+    participant Browser
+    participant BlogService
+    participant AuthService
+    participant DB
+
+    User->>Browser: Visit post page
+    Browser->>BlogService: GET /posts/123
+    BlogService->>AuthService: Validate session token
+    AuthService-->>BlogService: Session valid, user_id=42
+    BlogService->>DB: SELECT * FROM posts WHERE id=123
+    DB-->>BlogService: Post data
+    BlogService->>DB: SELECT * FROM comments WHERE post_id=123
+    DB-->>BlogService: Comments data
+    BlogService-->>Browser: HTML response
+    Browser-->>User: Render page
+
+    User->>Browser: Submit comment
+    Browser->>BlogService: POST /posts/123/comments
+    BlogService->>AuthService: Validate session token
+    AuthService-->>BlogService: Session valid, user_id=42
+    BlogService->>DB: INSERT INTO comments ...
+    DB-->>BlogService: OK
+    BlogService-->>Browser: 201 Created
+    Browser-->>User: Comment posted

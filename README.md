@@ -9,13 +9,15 @@ sekien is a drawer of Mermaids — Mermaid コードを SVG に変換する CLI 
 
 |  | sekien | mmdc |
 |---|---|---|
-| 実行速度 | ~0.6s | ~1.8s |
+| 実行速度 | ~0.6s | ~1.4s |
+| メモリ使用量 (RSS) | ~106 MB | ~252 MB |
 | バイナリサイズ | 4.5 MB | 330 MB (node_modules) |
 | 依存 | OS ネイティブ WebView | Puppeteer (Chromium 同梱) |
 | インストール | `cargo install` | `npm install -g` |
 | Pandoc filter | ✓ | ✗ |
 
-速度・サイズともに優位なのは Chromium をバンドルせず OS の WebView を使うため。
+実行速度・メモリ使用量ともに優位なのは Chromium をバンドルせず OS の WebView を使うため。
+計測環境: macOS (Apple Silicon)、`bench/` の図を各 20 回平均。
 
 ## インストール
 

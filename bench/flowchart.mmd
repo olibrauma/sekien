@@ -1,0 +1,19 @@
+flowchart TD
+    A[Christmas] -->|Get money| B(Go shopping)
+    B --> C{Let me think}
+    C -->|One| D[Laptop]
+    C -->|Two| E[iPhone]
+    C -->|Three| F[fa:fa-car Car]
+    D --> G[/OK/]
+    E --> G
+    F --> G
+    G --> H{Enough budget?}
+    H -->|Yes| I[Buy it]
+    H -->|No| J[Keep saving]
+    J --> B
+    I --> K([Done])
+
+    classDef green fill:#9f6,stroke:#333,stroke-width:2px
+    classDef orange fill:#f96,stroke:#333,stroke-width:4px
+    class I green
+    class J orange
