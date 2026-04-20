@@ -116,10 +116,9 @@ impl ApplicationHandler<String> for App {
         match parsed["type"].as_str().unwrap_or("") {
             "ready" if !self.started => {
                 self.started = true;
-                // serde_json::to_string on a String is infallible
                 let js = format!(
                     "renderMermaid(0, {})",
-                    serde_json::to_string(&self.blocks[0]).expect("serialize block")
+                    Value::String(self.blocks[0].clone())
                 );
                 let _ = webview.evaluate_script(&js);
             }
@@ -135,7 +134,7 @@ impl ApplicationHandler<String> for App {
                     let js = format!(
                         "renderMermaid({}, {})",
                         next,
-                        serde_json::to_string(&self.blocks[next]).expect("serialize block")
+                        Value::String(self.blocks[next].clone())
                     );
                     let _ = webview.evaluate_script(&js);
                 } else {
