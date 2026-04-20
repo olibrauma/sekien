@@ -70,7 +70,17 @@ pandoc input.md -o output.pdf \
   -V mainfont="Hiragino Sans"
 ```
 
-pandoc の user data directory に置くとパスなしで参照できる:
+インストール不要で使うには process substitution が使える (bash/zsh):
+
+```bash
+pandoc input.md -o output.pdf \
+  --pdf-engine=typst \
+  --filter sekien \
+  --lua-filter <(sekien --print-lua-filter) \
+  -V mainfont="Hiragino Sans"
+```
+
+常用するなら pandoc の user data directory に置くとパスなしで参照できる:
 
 ```bash
 sekien --print-lua-filter > ~/.local/share/pandoc/filters/sekien.lua
