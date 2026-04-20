@@ -14,7 +14,7 @@ sekien is a drawer of Mermaids — Mermaid コードを SVG に変換する CLI 
 | インストール | `cargo install` | `npm install -g` |
 | 実行速度 | ~0.6s | ~1.4s |
 | メモリ使用量 (RSS) | ~106 MB | ~252 MB |
-| Pandoc filter | ✓ | ✗ |
+| Pandoc filter | ✓ (built-in) | 別途 mermaid-filter が必要 |
 
 実行速度・メモリ使用量ともに優位なのは Chromium をバンドルせず OS の WebView を使うため。
 計測環境: macOS (Apple Silicon)、`bench/` の図を各 20 回平均。
