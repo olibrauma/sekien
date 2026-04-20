@@ -5,6 +5,18 @@ sekien is a drawer of Mermaids — Mermaid コードを SVG に変換する CLI 
 - OS ネイティブの WebView (macOS: WKWebView) を使用するため、Chromium のバンドルが不要
 - Pandoc の `--filter` オプションに対応
 
+## mmdc との比較
+
+|  | sekien | mmdc |
+|---|---|---|
+| 実行速度 | ~0.6s | ~1.8s |
+| バイナリサイズ | 4.5 MB | 330 MB (node_modules) |
+| 依存 | OS ネイティブ WebView | Puppeteer (Chromium 同梱) |
+| インストール | `cargo install` | `npm install -g` |
+| Pandoc filter | ✓ | ✗ |
+
+速度・サイズともに優位なのは Chromium をバンドルせず OS の WebView を使うため。
+
 ## 使い方
 
 ```bash
@@ -72,12 +84,13 @@ pandoc input.md -o output.pdf \
 
 ### フォントの指定
 
-ダイアグラム内のテキストフォントは `--font-family` フラグまたは環境変数で指定できる。
-デフォルトは `"Noto Sans JP, sans-serif"`。
+デフォルトは mermaid.js のデフォルト (`"trebuchet ms", verdana, arial, sans-serif`) で、
+未指定時はシステムのフォントフォールバックが効く。
+明示的に指定したい場合は `--font` フラグまたは環境変数を使う。
 
 ```bash
 # フラグで指定 (スタンドアロンモード)
-sekien --font-family "Hiragino Sans" diagram.mmd > diagram.svg
+sekien --font "Hiragino Sans" diagram.mmd > diagram.svg
 
 # 環境変数で指定 (pandoc filter モードでも有効)
 export SEKIEN_FONT_FAMILY="Hiragino Sans, Noto Sans JP, sans-serif"
@@ -131,8 +144,8 @@ render_all(blocks) の流れ:
   |-- evl.exit() (全ブロック完了)
 ```
 
-IPC メッセージは `Arc<Mutex<Option<String>>>` を介してやり取りし、
-`ControlFlow::Poll` でポーリングする。
+IPC メッセージは `EventLoopProxy<String>` を介してやり取りし、
+`ControlFlow::Wait` でイベントドリブンに処理する。
 
 ### pandoc.rs
 
