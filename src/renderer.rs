@@ -68,7 +68,6 @@ struct App {
     blocks: Vec<String>,
     font_family: Option<String>,
     theme: Option<String>,
-    current: usize,
     started: bool,
     // winit/wry ハンドル (resumed 後に初期化)
     _window: Option<Window>,
@@ -133,12 +132,13 @@ impl ApplicationHandler<String> for App {
             "svg" => {
                 let id = parsed["id"].as_u64().unwrap_or(0) as usize;
                 if let Ok(mut results) = self.results.lock() {
-                    results[id] = parsed["svg"].as_str().unwrap_or("").to_string();
+                    if id < results.len() {
+                        results[id] = parsed["svg"].as_str().unwrap_or("").to_string();
+                    }
                 }
 
                 let next = id + 1;
                 if next < self.blocks.len() {
-                    self.current = next;
                     let js = format!(
                         "renderMermaid({}, {})",
                         next,
@@ -236,7 +236,6 @@ pub fn render_all(blocks: Vec<String>, font_family: Option<&str>, theme: Option<
         blocks,
         font_family: font_family.map(|s| s.to_string()),
         theme: theme.map(|s| s.to_string()),
-        current: 0,
         started: false,
         _window: None,
         webview: None,

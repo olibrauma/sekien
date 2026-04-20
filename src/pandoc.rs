@@ -29,9 +29,10 @@ pub fn filter(input: &str, font_family: Option<&str>, theme: Option<&str>) -> Re
     let svgs = render_all(codes, font_family, theme)?;
 
     // CodeBlock → RawBlock("html", svg) に置換
-    let blocks_mut = ast["blocks"].as_array_mut().unwrap();
-    for (&idx, svg) in mermaid_indices.iter().zip(svgs.iter()) {
-        blocks_mut[idx] = json!({ "t": "RawBlock", "c": ["html", svg] });
+    if let Some(blocks_mut) = ast["blocks"].as_array_mut() {
+        for (&idx, svg) in mermaid_indices.iter().zip(svgs.iter()) {
+            blocks_mut[idx] = json!({ "t": "RawBlock", "c": ["html", svg] });
+        }
     }
 
     Ok(serde_json::to_string(&ast).context("failed to serialize pandoc AST")?)
