@@ -3,7 +3,7 @@ mod renderer;
 
 use anyhow::{Context, Result};
 use std::fs;
-use std::io::{self, IsTerminal, Read};
+use std::io::{self, Read};
 
 const DEFAULT_FONT_FAMILY: &str = "Noto Sans JP, sans-serif";
 const LUA_FILTER: &str = include_str!("../assets/sekien.lua");
@@ -132,10 +132,6 @@ fn main() -> Result<()> {
             print!("{}", pandoc::filter(&input, &font_family)?);
         }
         Command::Render { file } => {
-            if file.is_none() && std::io::stdin().is_terminal() {
-                eprintln!("{}", usage());
-                std::process::exit(1);
-            }
             let code = read_mermaid(file.as_deref())?;
             let svgs = renderer::render_all(vec![code], &font_family)?;
             println!("{}", svgs[0]);
