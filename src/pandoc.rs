@@ -34,10 +34,9 @@ pub fn filter(input: &str, config: &RenderConfig) -> Result<String> {
     let (indices, codes): (Vec<usize>, Vec<String>) = mermaid.into_iter().unzip();
     let svgs = render_all(codes, config)?;
 
-    if let Some(blocks_mut) = ast["blocks"].as_array_mut() {
-        for (&idx, svg) in indices.iter().zip(svgs.iter()) {
-            blocks_mut[idx] = json!({ "t": "RawBlock", "c": ["html", svg] });
-        }
+    let blocks_mut = ast["blocks"].as_array_mut().expect("blocks is array (verified above)");
+    for (&idx, svg) in indices.iter().zip(svgs.iter()) {
+        blocks_mut[idx] = json!({ "t": "RawBlock", "c": ["html", svg] });
     }
 
     Ok(serde_json::to_string(&ast).context("failed to serialize pandoc AST")?)
