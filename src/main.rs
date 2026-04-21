@@ -22,8 +22,6 @@ Options:
   --theme <theme>        Mermaid theme (default | base | dark | forest | neutral |
                            neo | neo-dark | redux | redux-dark | null)
                          Also configurable via SEKIEN_THEME env var.
-  --layout <layout>      Diagram layout engine (dagre | elk | ...)
-                         Also configurable via SEKIEN_LAYOUT env var.
   --look <look>          Diagram look (classic | handDrawn | neo)
                          Also configurable via SEKIEN_LOOK env var.
   --print-lua-filter     Print the bundled Lua filter for non-HTML PDF output (see below)
@@ -35,7 +33,6 @@ Options:
 Environment variables:
   SEKIEN_FONT            Font family (same as --font)
   SEKIEN_THEME           Mermaid theme (same as --theme)
-  SEKIEN_LAYOUT          Layout engine (same as --layout)
   SEKIEN_LOOK            Diagram look (same as --look)
 
 Non-HTML PDF output:
@@ -56,7 +53,6 @@ Non-HTML PDF output:
 struct Options {
     font_family: Option<String>,
     theme: Option<String>,
-    layout: Option<String>,
     look: Option<String>,
 }
 
@@ -89,9 +85,6 @@ fn parse_args(raw: Vec<String>) -> Result<Args, String> {
             }
             "--theme" => {
                 options.theme = Some(iter.next().ok_or("--theme requires a value")?);
-            }
-            "--layout" => {
-                options.layout = Some(iter.next().ok_or("--layout requires a value")?);
             }
             "--look" => {
                 options.look = Some(iter.next().ok_or("--look requires a value")?);
@@ -249,17 +242,6 @@ mod tests {
     }
 
     #[test]
-    fn layout_flag() {
-        let a = parse_args(args(&["--layout", "elk"])).unwrap();
-        assert_eq!(a.options.layout, Some("elk".to_string()));
-    }
-
-    #[test]
-    fn layout_flag_missing_value_is_error() {
-        assert!(parse_args(args(&["--layout"])).is_err());
-    }
-
-    #[test]
     fn look_flag() {
         let a = parse_args(args(&["--look", "handDrawn"])).unwrap();
         assert_eq!(a.options.look, Some("handDrawn".to_string()));
@@ -287,7 +269,6 @@ fn main() -> Result<()> {
     let config = RenderConfig {
         font_family: args.options.font_family.or_else(|| std::env::var("SEKIEN_FONT").ok()),
         theme:       args.options.theme.or_else(|| std::env::var("SEKIEN_THEME").ok()),
-        layout:      args.options.layout.or_else(|| std::env::var("SEKIEN_LAYOUT").ok()),
         look:        args.options.look.or_else(|| std::env::var("SEKIEN_LOOK").ok()),
     };
 

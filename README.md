@@ -134,16 +134,6 @@ SEKIEN_THEME=forest pandoc input.md -o output.html --filter sekien
 
 指定できる値: `default` / `base` / `dark` / `forest` / `neutral` / `neo` / `neo-dark` / `redux` / `redux-dark` / `null`
 
-### `--layout`
-
-レイアウトエンジンを指定できる。
-
-```bash
-sekien --layout elk diagram.mmd > diagram.svg
-```
-
-環境変数: `SEKIEN_LAYOUT`
-
 ### `--look`
 
 図の描画スタイルを指定できる。

@@ -15,7 +15,6 @@ const MERMAID_JS: &str = include_str!("../assets/mermaid.min.js");
 pub struct RenderConfig {
     pub font_family: Option<String>,
     pub theme: Option<String>,
-    pub layout: Option<String>,
     pub look: Option<String>,
 }
 
@@ -23,7 +22,6 @@ fn build_html(config: &RenderConfig) -> String {
     let extra_config: String = [
         ("theme",      &config.theme),
         ("fontFamily", &config.font_family),
-        ("layout",     &config.layout),
         ("look",       &config.look),
     ]
     .iter()
