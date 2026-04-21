@@ -10,6 +10,7 @@ use winit::{
 };
 
 const MERMAID_JS: &str = include_str!("../assets/mermaid.min.js");
+pub const MERMAID_VERSION: &str = "11.14.0";
 
 #[derive(Clone, Default)]
 pub struct RenderConfig {

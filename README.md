@@ -184,7 +184,7 @@ Ubuntu 22.04 以降や Fedora など主要なデスクトップ環境では XWay
 cargo build --release
 ```
 
-`assets/mermaid.min.js` はリポジトリに同梱済み。更新する場合は npm から取得して差し替える。
+`assets/mermaid.min.js` (v11.14.0) はリポジトリに同梱済み。更新する場合は npm から取得して差し替える。
 
 ```bash
 npm install mermaid

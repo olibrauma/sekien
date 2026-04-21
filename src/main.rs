@@ -2,14 +2,14 @@ mod pandoc;
 mod renderer;
 
 use anyhow::{Context, Result};
-use renderer::RenderConfig;
+use renderer::{RenderConfig, MERMAID_VERSION};
 use std::fs;
 use std::io::{self, Read};
 
 const LUA_FILTER: &str = include_str!("../assets/sekien.lua");
 
-fn usage() -> &'static str {
-    "sekien — Mermaid Drawer
+fn usage() -> String {
+    format!("sekien — Mermaid Drawer (mermaid.js {})
 
 Usage:
   sekien [options] [file.mmd]         Mermaid → SVG (stdout)
@@ -23,6 +23,7 @@ Options:
                            neo | neo-dark | redux | redux-dark | null)
                          Also configurable via SEKIEN_THEME env var.
   --look <look>          Diagram look (classic | handDrawn | neo)
+                         handDrawn is supported for flowchart/graph only.
                          Also configurable via SEKIEN_LOOK env var.
   --print-lua-filter     Print the bundled Lua filter for non-HTML PDF output (see below)
   --version, -v          Show version
@@ -45,7 +46,8 @@ Non-HTML PDF output:
 
   To install globally (reference by name without path):
     sekien --print-lua-filter > ~/.local/share/pandoc/filters/sekien.lua
-    pandoc input.md -o output.pdf --pdf-engine=typst --filter sekien --lua-filter sekien.lua"
+    pandoc input.md -o output.pdf --pdf-engine=typst --filter sekien --lua-filter sekien.lua",
+    MERMAID_VERSION)
 }
 
 // CLI フラグから収集したオプション。フラグを追加する場合はここにフィールドを足す。
@@ -277,7 +279,7 @@ fn main() -> Result<()> {
             println!("{}", usage());
         }
         Command::Version => {
-            println!("sekien {}", env!("CARGO_PKG_VERSION"));
+            println!("sekien {} (mermaid.js {})", env!("CARGO_PKG_VERSION"), MERMAID_VERSION);
         }
         Command::PrintLuaFilter => {
             print!("{}", LUA_FILTER);
