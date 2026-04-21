@@ -122,11 +122,13 @@ pandoc filter モードでは pandoc がフラグを渡せないため、環境�
 
 ### `--theme`
 
-`SEKIEN_THEME` 環境変数で mermaid.js のテーマを指定できる。
-未指定時は mermaid.js のデフォルト (`default`) が使われる。
+mermaid.js のテーマを指定できる。未指定時は mermaid.js のデフォルト (`default`) が使われる。
 
 ```bash
-SEKIEN_THEME=dark sekien diagram.mmd > diagram.svg
+# フラグで指定 (スタンドアロンモード)
+sekien --theme dark diagram.mmd > diagram.svg
+
+# 環境変数で指定 (pandoc filter モードでも有効)
 SEKIEN_THEME=forest pandoc input.md -o output.html --filter sekien
 ```
 

@@ -12,21 +12,24 @@ fn usage() -> &'static str {
     "sekien — Mermaid Drawer
 
 Usage:
-  sekien [--font <font>] [file.mmd]   Mermaid → SVG (stdout)
-  cat diagram.mmd | sekien                   Mermaid → SVG (stdout)
-  pandoc --filter sekien                     Pandoc filter (called automatically by pandoc)
+  sekien [options] [file.mmd]         Mermaid → SVG (stdout)
+  cat diagram.mmd | sekien            Mermaid → SVG (stdout)
+  pandoc --filter sekien              Pandoc filter (called automatically by pandoc)
 
 Options:
   --font <font>          Font family for diagram text (default: mermaid.js default)
                          Also configurable via SEKIEN_FONT env var.
-                         In pandoc filter mode, use the environment variable instead.
+  --theme <theme>        Mermaid theme: default | dark | forest | base | neutral
+                         Also configurable via SEKIEN_THEME env var.
   --print-lua-filter     Print the bundled Lua filter for non-HTML PDF output (see below)
   --version, -v          Show version
   --help, -h             Show this help
 
+  In pandoc filter mode, use environment variables instead of flags.
+
 Environment variables:
   SEKIEN_FONT            Font family (same as --font)
-  SEKIEN_THEME           Mermaid theme: default | dark | forest | base | neutral
+  SEKIEN_THEME           Mermaid theme (same as --theme)
 
 Non-HTML PDF output:
   sekien outputs RawBlock(\"html\", svg), which PDF engines that don't process raw HTML
@@ -41,9 +44,16 @@ Non-HTML PDF output:
     pandoc input.md -o output.pdf --pdf-engine=typst --filter sekien --lua-filter sekien.lua"
 }
 
+// CLI フラグから収集したオプション。フラグを追加する場合はここにフィールドを足す。
+#[derive(Default)]
+struct Options {
+    font_family: Option<String>,
+    theme: Option<String>,
+}
+
 // パース済み引数
 struct Args {
-    font_family: Option<String>,
+    options: Options,
     command: Command,
 }
 
@@ -56,17 +66,20 @@ enum Command {
 }
 
 fn parse_args(raw: Vec<String>) -> Result<Args, String> {
-    let mut font_family = None;
+    let mut options = Options::default();
     let mut rest: Vec<String> = Vec::new();
     let mut iter = raw.into_iter();
 
     while let Some(arg) = iter.next() {
         match arg.as_str() {
-            "--help" | "-h"         => return Ok(Args { font_family: None, command: Command::Help }),
-            "--version" | "-v"      => return Ok(Args { font_family: None, command: Command::Version }),
-            "--print-lua-filter"    => return Ok(Args { font_family: None, command: Command::PrintLuaFilter }),
+            "--help" | "-h"         => return Ok(Args { options: Options::default(), command: Command::Help }),
+            "--version" | "-v"      => return Ok(Args { options: Options::default(), command: Command::Version }),
+            "--print-lua-filter"    => return Ok(Args { options: Options::default(), command: Command::PrintLuaFilter }),
             "--font" => {
-                font_family = Some(iter.next().ok_or("--font requires a value")?);
+                options.font_family = Some(iter.next().ok_or("--font requires a value")?);
+            }
+            "--theme" => {
+                options.theme = Some(iter.next().ok_or("--theme requires a value")?);
             }
             _ => rest.push(arg),
         }
@@ -92,7 +105,7 @@ fn parse_args(raw: Vec<String>) -> Result<Args, String> {
         Command::Render { file: files.into_iter().next() }
     };
 
-    Ok(Args { font_family, command })
+    Ok(Args { options, command })
 }
 
 fn read_mermaid(file_path: Option<&str>) -> Result<String> {
@@ -180,19 +193,44 @@ mod tests {
     #[test]
     fn font_flag() {
         let a = parse_args(args(&["--font", "Arial"])).unwrap();
-        assert_eq!(a.font_family, Some("Arial".to_string()));
+        assert_eq!(a.options.font_family, Some("Arial".to_string()));
     }
 
     #[test]
     fn font_flag_with_file() {
         let a = parse_args(args(&["--font", "Arial", "diagram.mmd"])).unwrap();
-        assert_eq!(a.font_family, Some("Arial".to_string()));
+        assert_eq!(a.options.font_family, Some("Arial".to_string()));
         assert!(matches!(a.command, Command::Render { .. }));
     }
 
     #[test]
     fn font_flag_missing_value_is_error() {
         assert!(parse_args(args(&["--font"])).is_err());
+    }
+
+    #[test]
+    fn theme_flag() {
+        let a = parse_args(args(&["--theme", "dark"])).unwrap();
+        assert_eq!(a.options.theme, Some("dark".to_string()));
+    }
+
+    #[test]
+    fn theme_flag_with_file() {
+        let a = parse_args(args(&["--theme", "forest", "diagram.mmd"])).unwrap();
+        assert_eq!(a.options.theme, Some("forest".to_string()));
+        assert!(matches!(a.command, Command::Render { .. }));
+    }
+
+    #[test]
+    fn theme_flag_missing_value_is_error() {
+        assert!(parse_args(args(&["--theme"])).is_err());
+    }
+
+    #[test]
+    fn font_and_theme_flags() {
+        let a = parse_args(args(&["--font", "Arial", "--theme", "dark", "diagram.mmd"])).unwrap();
+        assert_eq!(a.options.font_family, Some("Arial".to_string()));
+        assert_eq!(a.options.theme, Some("dark".to_string()));
     }
 
     #[test]
@@ -210,8 +248,8 @@ fn main() -> Result<()> {
     });
 
     let config = RenderConfig {
-        font_family: args.font_family.or_else(|| std::env::var("SEKIEN_FONT").ok()),
-        theme: std::env::var("SEKIEN_THEME").ok(),
+        font_family: args.options.font_family.or_else(|| std::env::var("SEKIEN_FONT").ok()),
+        theme: args.options.theme.or_else(|| std::env::var("SEKIEN_THEME").ok()),
     };
 
     match args.command {
