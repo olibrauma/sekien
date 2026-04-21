@@ -99,14 +99,14 @@ mod tests {
     #[test]
     fn filter_with_no_mermaid_blocks_returns_input_unchanged() {
         let input = r#"{"pandoc-api-version":[1,23],"meta":{},"blocks":[{"t":"Para","c":[]}]}"#;
-        let config = RenderConfig { font_family: None, theme: None };
+        let config = RenderConfig::default();
         let output = filter(input, &config).unwrap();
         assert_eq!(output, input);
     }
 
     #[test]
     fn filter_invalid_json_returns_error() {
-        let config = RenderConfig { font_family: None, theme: None };
+        let config = RenderConfig::default();
         assert!(filter("not json", &config).is_err());
     }
 }

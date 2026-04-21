@@ -11,20 +11,27 @@ use winit::{
 
 const MERMAID_JS: &str = include_str!("../assets/mermaid.min.js");
 
-#[derive(Clone)]
+#[derive(Clone, Default)]
 pub struct RenderConfig {
     pub font_family: Option<String>,
     pub theme: Option<String>,
+    pub layout: Option<String>,
+    pub look: Option<String>,
 }
 
 fn build_html(config: &RenderConfig) -> String {
-    let extra_config: String = [("theme", &config.theme), ("fontFamily", &config.font_family)]
-        .iter()
-        .filter_map(|(k, v)| v.as_deref().map(|v| format!(
-            "  {k}: {},\n",
-            serde_json::to_string(v).expect("serialize config field")
-        )))
-        .collect();
+    let extra_config: String = [
+        ("theme",      &config.theme),
+        ("fontFamily", &config.font_family),
+        ("layout",     &config.layout),
+        ("look",       &config.look),
+    ]
+    .iter()
+    .filter_map(|(k, v)| v.as_deref().map(|v| format!(
+        "  {k}: {},\n",
+        serde_json::to_string(v).expect("serialize config field")
+    )))
+    .collect();
     format!(
         r#"<!DOCTYPE html>
 <html>
@@ -167,6 +174,7 @@ mod tests {
         RenderConfig {
             font_family: font_family.map(|s| s.to_string()),
             theme: theme.map(|s| s.to_string()),
+            ..Default::default()
         }
     }
 
