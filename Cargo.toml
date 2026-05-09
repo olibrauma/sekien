@@ -9,7 +9,7 @@ name = "sekien"
 path = "src/main.rs"
 
 [dependencies]
-wry = "0.44"
-winit = "0.30"
+wry = "0.55"
+tao = "0.35"
 serde_json = "1"
 anyhow = "1"

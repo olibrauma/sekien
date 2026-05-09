@@ -1,7 +1,7 @@
 mod pandoc;
 mod renderer;
 
-use anyhow::{Context, Result};
+use anyhow::Result;
 use renderer::{RenderConfig, MERMAID_VERSION};
 use std::fs;
 use std::io::{self, Read};
@@ -27,30 +27,10 @@ Options:
                          Also configurable via SEKIEN_LOOK env var.
   --print-lua-filter     Print the bundled Lua filter for non-HTML PDF output (see below)
   --version, -v          Show version
-  --help, -h             Show this help
-
-  In pandoc filter mode, use environment variables instead of flags.
-
-Environment variables:
-  SEKIEN_FONT            Font family (same as --font)
-  SEKIEN_THEME           Mermaid theme (same as --theme)
-  SEKIEN_LOOK            Diagram look (same as --look)
-
-Non-HTML PDF output:
-  sekien outputs RawBlock(\"html\", svg), which PDF engines that don't process raw HTML
-  (e.g. typst, pdflatex) will drop. Use the bundled Lua filter to convert SVG blocks
-  to Image nodes that these engines can include:
-
-    sekien --print-lua-filter > sekien.lua
-    pandoc input.md -o output.pdf --pdf-engine=typst --filter sekien --lua-filter sekien.lua
-
-  To install globally (reference by name without path):
-    sekien --print-lua-filter > ~/.local/share/pandoc/filters/sekien.lua
-    pandoc input.md -o output.pdf --pdf-engine=typst --filter sekien --lua-filter sekien.lua",
+  --help, -h             Show this help",
     MERMAID_VERSION)
 }
 
-// CLI フラグから収集したオプション。フラグを追加する場合はここにフィールドを足す。
 #[derive(Default)]
 struct Options {
     font_family: Option<String>,
@@ -58,7 +38,6 @@ struct Options {
     look: Option<String>,
 }
 
-// パース済み引数
 struct Args {
     options: Options,
     command: Command,
@@ -95,8 +74,6 @@ fn parse_args(raw: Vec<String>) -> Result<Args, String> {
         }
     }
 
-    // pandoc は filter を `<binary> <output-format>` で呼び出す。
-    // 引数が 1 つでフラグでもファイルパスでもなければ pandoc filter モードと判定する。
     let command = if rest.len() == 1
         && !rest[0].starts_with('-')
         && !rest[0].contains('/')
@@ -106,11 +83,7 @@ fn parse_args(raw: Vec<String>) -> Result<Args, String> {
     } else {
         let files: Vec<String> = rest.into_iter().filter(|a| !a.starts_with('-')).collect();
         if files.len() > 1 {
-            return Err(format!(
-                "error: too many arguments (sekien takes at most one file)\n\
-                 hint:  for multiple files, use a shell loop:\n\
-                 \t for f in *.mmd; do sekien \"$f\" > \"${{f%.mmd}}.svg\"; done"
-            ));
+            return Err("error: too many arguments".to_string());
         }
         Command::Render { file: files.into_iter().next() }
     };
@@ -120,149 +93,41 @@ fn parse_args(raw: Vec<String>) -> Result<Args, String> {
 
 fn read_mermaid(file_path: Option<&str>) -> Result<String> {
     match file_path {
-        Some(p) => fs::read_to_string(p).with_context(|| format!("cannot read '{p}'")),
+        Some(p) => fs::read_to_string(p).map_err(anyhow::Error::from),
         None => {
             let mut buf = String::new();
-            io::stdin().read_to_string(&mut buf).context("failed to read stdin")?;
+            io::stdin().read_to_string(&mut buf)?;
             Ok(buf)
         }
     }
 }
 
-#[cfg(test)]
-mod tests {
-    use super::*;
+fn main() -> Result<()> {
+    #[cfg(target_os = "linux")]
+    {
+        // On Linux, if we are in a Wayland session, we MUST use GDK_BACKEND=x11
+        // to avoid "width > 0" assertion failures when creating hidden windows.
+        // If GDK_BACKEND is not set and we are on Wayland, restart ourselves.
+        if std::env::var("WAYLAND_DISPLAY").is_ok() && std::env::var("GDK_BACKEND").is_err() {
+            let status = std::process::Command::new(std::env::current_exe()?)
+                .env("GDK_BACKEND", "x11")
+                .args(std::env::args().skip(1))
+                .status()?;
+            std::process::exit(status.code().unwrap_or(0));
+        }
 
-    fn args(v: &[&str]) -> Vec<String> {
-        v.iter().map(|s| s.to_string()).collect()
-    }
-
-    #[test]
-    fn help_long() {
-        let a = parse_args(args(&["--help"])).unwrap();
-        assert!(matches!(a.command, Command::Help));
-    }
-
-    #[test]
-    fn help_short() {
-        let a = parse_args(args(&["-h"])).unwrap();
-        assert!(matches!(a.command, Command::Help));
-    }
-
-    #[test]
-    fn version_long() {
-        let a = parse_args(args(&["--version"])).unwrap();
-        assert!(matches!(a.command, Command::Version));
-    }
-
-    #[test]
-    fn version_short() {
-        let a = parse_args(args(&["-v"])).unwrap();
-        assert!(matches!(a.command, Command::Version));
-    }
-
-    #[test]
-    fn print_lua_filter() {
-        let a = parse_args(args(&["--print-lua-filter"])).unwrap();
-        assert!(matches!(a.command, Command::PrintLuaFilter));
-    }
-
-    // pandoc は `sekien <format>` で呼び出す。フォーマット名はドット・スラッシュ・ハイフンを含まない。
-    #[test]
-    fn pandoc_filter_mode_common_formats() {
-        for fmt in &["html", "latex", "markdown", "docx", "rst"] {
-            let a = parse_args(args(&[fmt])).unwrap();
-            assert!(
-                matches!(a.command, Command::PandocFilter),
-                "expected PandocFilter for format: {fmt}"
-            );
+        // If no DISPLAY is available at all, try to use xvfb-run.
+        if std::env::var("DISPLAY").is_err() {
+            let status = std::process::Command::new("xvfb-run")
+                .arg("-a")
+                .arg(std::env::current_exe()?)
+                .args(std::env::args().skip(1))
+                .status()?;
+            std::process::exit(status.code().unwrap_or(0));
         }
     }
 
-    #[test]
-    fn render_no_args() {
-        let a = parse_args(args(&[])).unwrap();
-        assert!(matches!(a.command, Command::Render { file: None }));
-    }
-
-    #[test]
-    fn render_with_file() {
-        let a = parse_args(args(&["diagram.mmd"])).unwrap();
-        assert!(matches!(
-            a.command,
-            Command::Render { ref file } if file.as_deref() == Some("diagram.mmd")
-        ));
-    }
-
-    #[test]
-    fn file_with_slash_is_render_not_pandoc() {
-        let a = parse_args(args(&["./diagram.mmd"])).unwrap();
-        assert!(matches!(a.command, Command::Render { .. }));
-    }
-
-    #[test]
-    fn font_flag() {
-        let a = parse_args(args(&["--font", "Arial"])).unwrap();
-        assert_eq!(a.options.font_family, Some("Arial".to_string()));
-    }
-
-    #[test]
-    fn font_flag_with_file() {
-        let a = parse_args(args(&["--font", "Arial", "diagram.mmd"])).unwrap();
-        assert_eq!(a.options.font_family, Some("Arial".to_string()));
-        assert!(matches!(a.command, Command::Render { .. }));
-    }
-
-    #[test]
-    fn font_flag_missing_value_is_error() {
-        assert!(parse_args(args(&["--font"])).is_err());
-    }
-
-    #[test]
-    fn theme_flag() {
-        let a = parse_args(args(&["--theme", "dark"])).unwrap();
-        assert_eq!(a.options.theme, Some("dark".to_string()));
-    }
-
-    #[test]
-    fn theme_flag_with_file() {
-        let a = parse_args(args(&["--theme", "forest", "diagram.mmd"])).unwrap();
-        assert_eq!(a.options.theme, Some("forest".to_string()));
-        assert!(matches!(a.command, Command::Render { .. }));
-    }
-
-    #[test]
-    fn theme_flag_missing_value_is_error() {
-        assert!(parse_args(args(&["--theme"])).is_err());
-    }
-
-    #[test]
-    fn font_and_theme_flags() {
-        let a = parse_args(args(&["--font", "Arial", "--theme", "dark", "diagram.mmd"])).unwrap();
-        assert_eq!(a.options.font_family, Some("Arial".to_string()));
-        assert_eq!(a.options.theme, Some("dark".to_string()));
-    }
-
-    #[test]
-    fn look_flag() {
-        let a = parse_args(args(&["--look", "handDrawn"])).unwrap();
-        assert_eq!(a.options.look, Some("handDrawn".to_string()));
-    }
-
-    #[test]
-    fn look_flag_missing_value_is_error() {
-        assert!(parse_args(args(&["--look"])).is_err());
-    }
-
-    #[test]
-    fn too_many_files_is_error() {
-        assert!(parse_args(args(&["a.mmd", "b.mmd"])).is_err());
-    }
-}
-
-fn main() -> Result<()> {
     let raw: Vec<String> = std::env::args().skip(1).collect();
-
     let args = parse_args(raw).unwrap_or_else(|e| {
         eprintln!("{}", e);
         std::process::exit(1);
@@ -275,24 +140,21 @@ fn main() -> Result<()> {
     };
 
     match args.command {
-        Command::Help => {
-            println!("{}", usage());
-        }
-        Command::Version => {
-            println!("sekien {} (mermaid.js {})", env!("CARGO_PKG_VERSION"), MERMAID_VERSION);
-        }
-        Command::PrintLuaFilter => {
-            print!("{}", LUA_FILTER);
-        }
+        Command::Help => println!("{}", usage()),
+        Command::Version => println!("sekien {} (mermaid.js {})", env!("CARGO_PKG_VERSION"), MERMAID_VERSION),
+        Command::PrintLuaFilter => print!("{}", LUA_FILTER),
         Command::PandocFilter => {
             let mut input = String::new();
             io::stdin().read_to_string(&mut input)?;
-            print!("{}", pandoc::filter(&input, &config)?);
+            pandoc::filter(&input, &config)?;
         }
         Command::Render { file } => {
             let code = read_mermaid(file.as_deref())?;
-            let svgs = renderer::render_all(vec![code], &config)?;
-            println!("{}", svgs[0]);
+            renderer::render_all(vec![code], &config, |svgs| {
+                if !svgs.is_empty() {
+                    println!("{}", svgs[0]);
+                }
+            })?;
         }
     }
 

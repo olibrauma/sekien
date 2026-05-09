@@ -1,12 +1,11 @@
-use anyhow::{Context, Result};
+use anyhow::Result;
 use serde_json::Value;
 use std::sync::{Arc, Mutex};
 use wry::{WebView, WebViewBuilder};
-use winit::{
-    application::ApplicationHandler,
-    event::WindowEvent,
-    event_loop::{ActiveEventLoop, ControlFlow, EventLoop, EventLoopProxy},
-    window::{Window, WindowId},
+use tao::{
+    event::{Event, StartCause, WindowEvent},
+    event_loop::{ControlFlow, EventLoopBuilder},
+    window::WindowBuilder,
 };
 
 const MERMAID_JS: &str = include_str!("../assets/mermaid.min.js");
@@ -36,6 +35,9 @@ fn build_html(config: &RenderConfig) -> String {
 <html>
 <head>
 <script>{mermaid}</script>
+<style>
+  html, body {{ background: transparent !important; }}
+</style>
 </head>
 <body>
 <script>
@@ -62,107 +64,150 @@ window.ipc.postMessage(JSON.stringify({{ type: 'ready' }}));
     )
 }
 
-struct App {
-    proxy: EventLoopProxy<String>,
-    // 収集した SVG (呼び出し元と共有)
-    results: Arc<Mutex<Vec<String>>>,
-    // レンダリングエラー (呼び出し元と共有)
-    error: Arc<Mutex<Option<String>>>,
-    // レンダリング対象のブロック
-    blocks: Vec<String>,
-    config: RenderConfig,
-    started: bool,
-    // winit/wry ハンドル (resumed 後に初期化)
-    _window: Option<Window>,
-    webview: Option<WebView>,
-}
-
-impl ApplicationHandler<String> for App {
-    fn resumed(&mut self, event_loop: &ActiveEventLoop) {
-        let window = match event_loop
-            .create_window(Window::default_attributes().with_visible(false))
-        {
-            Ok(w) => w,
-            Err(e) => {
-                *self.error.lock().unwrap() = Some(format!("failed to create window: {e}"));
-                event_loop.exit();
-                return;
-            }
-        };
-
-        let proxy = self.proxy.clone();
-        let webview = match WebViewBuilder::new(&window)
-            .with_html(build_html(&self.config))
-            .with_ipc_handler(move |req: wry::http::Request<String>| {
-                let _ = proxy.send_event(req.into_body());
-            })
-            .build()
-        {
-            Ok(w) => w,
-            Err(e) => {
-                *self.error.lock().unwrap() = Some(format!("failed to create webview: {e}"));
-                event_loop.exit();
-                return;
-            }
-        };
-
-        self._window = Some(window);
-        self.webview = Some(webview);
-
-        event_loop.set_control_flow(ControlFlow::Wait);
+/// 全ての Mermaid ブロックをレンダリングし、完了したら on_complete を呼び出してプロセスを終了する。
+/// tao のイベントループは戻ってこないため、この関数も戻ってこない。
+pub fn render_all<F>(blocks: Vec<String>, config: &RenderConfig, on_complete: F) -> Result<()>
+where
+    F: FnOnce(Vec<String>) + Send + 'static,
+{
+    if blocks.is_empty() {
+        on_complete(vec![]);
+        std::process::exit(0);
     }
 
-    fn window_event(&mut self, event_loop: &ActiveEventLoop, _id: WindowId, event: WindowEvent) {
-        if let WindowEvent::Destroyed = event {
-            event_loop.exit();
-        }
-    }
+    let results = Arc::new(Mutex::new(vec![String::new(); blocks.len()]));
+    let event_loop = EventLoopBuilder::<String>::with_user_event().build();
+    let proxy = event_loop.create_proxy();
 
-    fn user_event(&mut self, event_loop: &ActiveEventLoop, msg: String) {
-        let Ok(parsed) = serde_json::from_str::<Value>(&msg) else { return };
+    let results_inner = Arc::clone(&results);
+    let config_inner = config.clone();
+    let blocks_inner = blocks.clone();
+    let mut on_complete_opt = Some(on_complete);
+    
+    let mut started = false;
+    let mut webview: Option<WebView> = None;
+    let mut _window: Option<tao::window::Window> = None;
 
-        let Some(webview) = self.webview.as_ref() else { return };
+    event_loop.run(move |event, event_loop, control_flow| {
+        *control_flow = ControlFlow::Wait;
 
-        match parsed["type"].as_str().unwrap_or("") {
-            "ready" if !self.started => {
-                self.started = true;
-                let js = format!(
-                    "renderMermaid(0, {})",
-                    Value::String(self.blocks[0].clone())
-                );
-                let _ = webview.evaluate_script(&js);
-            }
-            "svg" => {
-                let id = parsed["id"].as_u64().unwrap_or(0) as usize;
-                if let Ok(mut results) = self.results.lock() {
-                    if id < results.len() {
-                        results[id] = parsed["svg"].as_str().unwrap_or("").to_string();
+        match event {
+            Event::NewEvents(StartCause::Init) => {
+                if _window.is_none() {
+                    let mut builder = WindowBuilder::new()
+                        .with_transparent(true)
+                        .with_decorations(false)
+                        .with_always_on_top(false);
+
+                    #[cfg(target_os = "linux")]
+                    {
+                        // Linux: size 1x1 leads to GDK assertion failures.
+                        // We use a small size and position it far away.
+                        builder = builder
+                            .with_visible(true)
+                            .with_inner_size(tao::dpi::LogicalSize::new(100, 100))
+                            .with_position(tao::dpi::LogicalPosition::new(-10000, -10000));
                     }
-                }
 
-                let next = id + 1;
-                if next < self.blocks.len() {
-                    let js = format!(
-                        "renderMermaid({}, {})",
-                        next,
-                        Value::String(self.blocks[next].clone())
-                    );
-                    let _ = webview.evaluate_script(&js);
-                } else {
-                    event_loop.exit();
+                    #[cfg(not(target_os = "linux"))]
+                    {
+                        builder = builder
+                            .with_visible(true)
+                            .with_inner_size(tao::dpi::LogicalSize::new(1, 1))
+                            .with_position(tao::dpi::LogicalPosition::new(-10000, -10000));
+                    }
+
+                    let window = match builder.build(event_loop) {
+                        Ok(w) => w,
+                        Err(e) => {
+                            eprintln!("Error: failed to create window: {e}");
+                            std::process::exit(1);
+                        }
+                    };
+                    
+                    #[cfg(not(target_os = "linux"))]
+                    window.set_outer_position(tao::dpi::LogicalPosition::new(-10000, -10000));
+
+                    _window = Some(window);
                 }
             }
-            "error" => {
-                let id = parsed["id"].as_u64().unwrap_or(0) as usize;
-                let msg = parsed["error"].as_str().unwrap_or("unknown error");
-                if let Ok(mut err) = self.error.lock() {
-                    *err = Some(format!("mermaid block {}: {}", id + 1, msg));
+
+            Event::MainEventsCleared | Event::RedrawEventsCleared if webview.is_none() && _window.is_some() => {
+                let window = _window.as_ref().unwrap();
+                let proxy_inner = proxy.clone();
+                let wv = match WebViewBuilder::new()
+                    .with_background_color((0, 0, 0, 0))
+                    .with_transparent(true)
+                    .with_html(build_html(&config_inner))
+                    .with_ipc_handler(move |req| {
+                        let _ = proxy_inner.send_event(req.into_body());
+                    })
+                    .build(window)
+                {
+                    Ok(w) => w,
+                    Err(e) => {
+                        eprintln!("Error: failed to create webview: {e}");
+                        std::process::exit(1);
+                    }
+                };
+                webview = Some(wv);
+            }
+
+            Event::UserEvent(msg) => {
+                let Ok(parsed) = serde_json::from_str::<Value>(&msg) else { return };
+                let Some(wv) = webview.as_ref() else { return };
+
+                match parsed["type"].as_str().unwrap_or("") {
+                    "ready" if !started => {
+                        started = true;
+                        let js = format!(
+                            "renderMermaid(0, {})",
+                            Value::String(blocks_inner[0].clone())
+                        );
+                        let _ = wv.evaluate_script(&js);
+                    }
+                    "svg" => {
+                        let id = parsed["id"].as_u64().unwrap_or(0) as usize;
+                        if let Ok(mut res) = results_inner.lock() {
+                            if id < res.len() {
+                                res[id] = parsed["svg"].as_str().unwrap_or("").to_string();
+                            }
+                        }
+
+                        let next = id + 1;
+                        if next < blocks_inner.len() {
+                            let js = format!(
+                                "renderMermaid({}, {})",
+                                next,
+                                Value::String(blocks_inner[next].clone())
+                            );
+                            let _ = wv.evaluate_script(&js);
+                        } else {
+                            if let Some(cb) = on_complete_opt.take() {
+                                let res = results_inner.lock().unwrap().clone();
+                                cb(res);
+                            }
+                            std::process::exit(0);
+                        }
+                    }
+                    "error" => {
+                        let id = parsed["id"].as_u64().unwrap_or(0) as usize;
+                        let msg = parsed["error"].as_str().unwrap_or("unknown error");
+                        eprintln!("Error: mermaid block {}: {}", id + 1, msg);
+                        std::process::exit(1);
+                    }
+                    _ => {}
                 }
-                event_loop.exit();
+            }
+            Event::WindowEvent {
+                event: WindowEvent::CloseRequested,
+                ..
+            } => {
+                *control_flow = ControlFlow::Exit;
             }
             _ => {}
         }
-    }
+    });
 }
 
 #[cfg(test)]
@@ -180,7 +225,6 @@ mod tests {
     #[test]
     fn build_html_no_options() {
         let html = build_html(&cfg(None, None));
-        // mermaid.min.js 自体に "fontFamily" は含まれるが、設定形式 "  fontFamily:" は含まれない
         assert!(!html.contains("  fontFamily:"));
         assert!(!html.contains("  theme:"));
     }
@@ -193,7 +237,6 @@ mod tests {
 
     #[test]
     fn build_html_font_single_quote_is_escaped() {
-        // 修正前は fontFamily: ''; alert('xss'); '' となり JS インジェクション可能だった
         let html = build_html(&cfg(Some("'; alert('xss'); '"), None));
         assert!(html.contains("fontFamily: \"'; alert('xss'); '\""));
         assert!(!html.contains("fontFamily: '"));
@@ -216,38 +259,4 @@ mod tests {
         let html = build_html(&cfg(None, Some("dark")));
         assert!(html.contains("theme: \"dark\""));
     }
-}
-
-pub fn render_all(blocks: Vec<String>, config: &RenderConfig) -> Result<Vec<String>> {
-    if blocks.is_empty() {
-        return Ok(vec![]);
-    }
-
-    let results = Arc::new(Mutex::new(vec![String::new(); blocks.len()]));
-    let error = Arc::new(Mutex::new(None::<String>));
-
-    let event_loop = EventLoop::<String>::with_user_event()
-        .build()
-        .context("failed to build event loop")?;
-    let proxy = event_loop.create_proxy();
-
-    let mut app = App {
-        proxy,
-        results: Arc::clone(&results),
-        error: Arc::clone(&error),
-        blocks,
-        config: config.clone(),
-        started: false,
-        _window: None,
-        webview: None,
-    };
-
-    event_loop.run_app(&mut app).context("event loop error")?;
-
-    if let Some(msg) = error.lock().unwrap().take() {
-        return Err(anyhow::anyhow!(msg));
-    }
-
-    let svgs = results.lock().unwrap().clone();
-    Ok(svgs)
 }

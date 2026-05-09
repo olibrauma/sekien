@@ -19,8 +19,8 @@ fn collect_mermaid(blocks: &[Value]) -> Vec<(usize, String)> {
         .collect()
 }
 
-pub fn filter(input: &str, config: &RenderConfig) -> Result<String> {
-    let mut ast: Value = serde_json::from_str(input).context("invalid pandoc AST")?;
+pub fn filter(input: &str, config: &RenderConfig) -> Result<()> {
+    let ast: Value = serde_json::from_str(input).context("invalid pandoc AST")?;
 
     let mermaid = {
         let blocks = ast["blocks"].as_array().context("no blocks in pandoc AST")?;
@@ -28,18 +28,22 @@ pub fn filter(input: &str, config: &RenderConfig) -> Result<String> {
     };
 
     if mermaid.is_empty() {
-        return Ok(input.to_string());
+        print!("{}", input);
+        return Ok(());
     }
 
     let (indices, codes): (Vec<usize>, Vec<String>) = mermaid.into_iter().unzip();
-    let svgs = render_all(codes, config)?;
+    
+    render_all(codes, config, move |svgs| {
+        let mut ast = ast;
+        let blocks_mut = ast["blocks"].as_array_mut().expect("blocks is array (verified above)");
+        for (&idx, svg) in indices.iter().zip(svgs.iter()) {
+            blocks_mut[idx] = json!({ "t": "RawBlock", "c": ["html", svg] });
+        }
+        print!("{}", serde_json::to_string(&ast).expect("failed to serialize pandoc AST"));
+    })?;
 
-    let blocks_mut = ast["blocks"].as_array_mut().expect("blocks is array (verified above)");
-    for (&idx, svg) in indices.iter().zip(svgs.iter()) {
-        blocks_mut[idx] = json!({ "t": "RawBlock", "c": ["html", svg] });
-    }
-
-    Ok(serde_json::to_string(&ast).context("failed to serialize pandoc AST")?)
+    Ok(())
 }
 
 #[cfg(test)]
@@ -96,11 +100,11 @@ mod tests {
     }
 
     #[test]
-    fn filter_with_no_mermaid_blocks_returns_input_unchanged() {
+    fn filter_with_no_mermaid_blocks_returns_ok() {
         let input = r#"{"pandoc-api-version":[1,23],"meta":{},"blocks":[{"t":"Para","c":[]}]}"#;
         let config = RenderConfig::default();
-        let output = filter(input, &config).unwrap();
-        assert_eq!(output, input);
+        let result = filter(input, &config);
+        assert!(result.is_ok());
     }
 
     #[test]
