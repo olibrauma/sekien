@@ -26,6 +26,9 @@ sekien is a drawer of Mermaids — Mermaid コードを SVG に変換する CLI 
 cargo install sekien
 ```
 
+Linux の場合はビルドに WebKitGTK 関連のパッケージが必要です（Ubuntu 例）:
+`sudo apt install libwebkit2gtk-4.1-dev libgtk-3-dev`
+
 ## 使い方
 
 ### スタンドアロンモード
@@ -153,30 +156,18 @@ sekien は OS ネイティブの WebView を使うため、いずれの OS で�
 
 ## ヘッドレス実行 (Linux)
 
-### X11
+sekien は OS ネイティブの WebView を使うため、Linux 環境では通常ディスプレイ接続が必要です。
 
-未検証。`xvfb-run` で仮想ディスプレイを立ち上げると動作する可能性がある。
+### Wayland セッションへの自動対応
+Wayland 環境下で非表示ウィンドウを作成する際の制限（GDK assertion 等）を回避するため、sekien は Wayland を検知すると自動的に `GDK_BACKEND=x11` をセットして自己再起動します。ユーザーは環境変数を意識することなく実行可能です。
+
+### ディスプレイなし環境 (CI等)
+`xvfb-run` がインストールされており、`DISPLAY` が設定されていない場合、sekien は自動的に `xvfb-run` を介して自身を再起動します。
 
 ```bash
+# 手動での呼び出しも引き続き可能です
 xvfb-run sekien diagram.mmd > diagram.svg
 ```
-
-GitHub Actions では:
-
-```yaml
-- run: xvfb-run cargo test
-```
-
-### Wayland
-
-未検証。動作しない場合は `GDK_BACKEND=x11` で X11 バックエンドを強制すると
-XWayland 経由で動作する可能性がある。
-
-```bash
-GDK_BACKEND=x11 sekien diagram.mmd > diagram.svg
-```
-
-Ubuntu 22.04 以降や Fedora など主要なデスクトップ環境では XWayland がデフォルトで利用可能。
 
 ## ビルド
 
@@ -206,7 +197,7 @@ sekien/
 
 ### renderer.rs
 
-wry が提供する OS ネイティブ WebView を起動し、mermaid.js を使って
+**tao** が提供する OS ネイティブ WebView を起動し、mermaid.js を使って
 Mermaid コードを SVG に変換する。
 
 ```

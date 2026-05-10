@@ -1,0 +1,10 @@
+{
+  "pandoc-api-version": [1, 23],
+  "meta": {},
+  "blocks": [
+    {
+      "t": "CodeBlock",
+      "c": [["", ["mermaid"], []], "graph LR\n  A --> B"]
+    }
+  ]
+}
