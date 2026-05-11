@@ -72,12 +72,16 @@ sekien は `RawBlock("html", svg)` を出力するため、HTML を経由しな�
 typst や pdflatex など raw HTML を drop する PDF engine では、sekien に同梱の Lua filter で
 SVG をファイルに書き出して Image ノードに変換することで回避できる。
 
+**注意 (Typst ユーザー):**
+Typst はデフォルトでプロジェクト外のファイルアクセスを制限しているため、Lua filter が作成する一時ファイル (`/tmp`) を読み込めるように `--pdf-engine-opt=--root=/` を付ける必要があります。
+
 ```bash
 # Lua filter をカレントディレクトリに書き出す
 sekien --print-lua-filter > sekien.lua
 
 pandoc input.md -o output.pdf \
   --pdf-engine=typst \
+  --pdf-engine-opt=--root=/ \
   --filter sekien \
   --lua-filter sekien.lua \
   -V mainfont="Hiragino Sans"
@@ -88,6 +92,7 @@ pandoc input.md -o output.pdf \
 ```bash
 pandoc input.md -o output.pdf \
   --pdf-engine=typst \
+  --pdf-engine-opt=--root=/ \
   --filter sekien \
   --lua-filter <(sekien --print-lua-filter) \
   -V mainfont="Hiragino Sans"

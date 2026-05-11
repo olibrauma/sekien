@@ -4,18 +4,19 @@
 -- into Image nodes pointing to temporary SVG files.
 -- This allows PDF engines that drop raw HTML (e.g. typst) to include the SVG.
 --
--- Installation:
---   sekien --print-lua-filter > $(pandoc --version | grep 'User data' | awk '{print $3}')/filters/sekien.lua
---
--- Usage:
---   pandoc input.md -o output.pdf --pdf-engine=typst --filter sekien --lua-filter sekien
+-- Note for Typst users:
+--   Typst restricts file access to the project root by default.
+--   When using this filter with Typst, you must grant access to /tmp:
+--   pandoc ... --pdf-engine=typst --pdf-engine-opt=--root=/
 
 function RawBlock(el)
   if el.format == "html" and el.text:match("^%s*<svg") then
     local path = os.tmpname() .. ".svg"
     local f = io.open(path, "w")
-    f:write(el.text)
-    f:close()
+    if f then
+      f:write(el.text)
+      f:close()
+    end
     return pandoc.Para({pandoc.Image({}, path)})
   end
 end
