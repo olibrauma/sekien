@@ -1,7 +1,7 @@
 mod pandoc;
 mod renderer;
 
-use anyhow::Result;
+use anyhow::{Context, Result};
 use renderer::{RenderConfig, MERMAID_VERSION};
 use std::fs;
 use std::io::{self, Read};
@@ -105,24 +105,25 @@ fn read_mermaid(file_path: Option<&str>) -> Result<String> {
 fn main() -> Result<()> {
     #[cfg(target_os = "linux")]
     {
-        // On Linux, if we are in a Wayland session, we MUST use GDK_BACKEND=x11
-        // to avoid "width > 0" assertion failures when creating hidden windows.
-        // If GDK_BACKEND is not set and we are on Wayland, restart ourselves.
-        if std::env::var("WAYLAND_DISPLAY").is_ok() && std::env::var("GDK_BACKEND").is_err() {
-            let status = std::process::Command::new(std::env::current_exe()?)
-                .env("GDK_BACKEND", "x11")
-                .args(std::env::args().skip(1))
-                .status()?;
-            std::process::exit(status.code().unwrap_or(0));
-        }
+        // To avoid window flicker on Wayland and ensure reliable headless rendering,
+        // we force xvfb-run if we are in a Wayland session or if no DISPLAY is set.
+        // We also force GDK_BACKEND=x11 to work correctly with Xvfb.
+        let is_wayland = std::env::var("WAYLAND_DISPLAY").is_ok();
+        let no_display = std::env::var("DISPLAY").is_err();
+        let already_in_xvfb = std::env::var("SEKIEN_XVFBRUN").is_ok();
 
-        // If no DISPLAY is available at all, try to use xvfb-run.
-        if std::env::var("DISPLAY").is_err() {
+        if (is_wayland || no_display) && !already_in_xvfb {
             let status = std::process::Command::new("xvfb-run")
                 .arg("-a")
+                .arg("-s")
+                .arg("-screen 0 1280x1024x24")
+                .env("GDK_BACKEND", "x11")
+                .env("LIBGL_ALWAYS_SOFTWARE", "1") // Silence driver warnings
+                .env("SEKIEN_XVFBRUN", "1") // Prevent infinite recursion
                 .arg(std::env::current_exe()?)
                 .args(std::env::args().skip(1))
-                .status()?;
+                .status()
+                .context("failed to execute xvfb-run. please ensure xvfb is installed.")?;
             std::process::exit(status.code().unwrap_or(0));
         }
     }
