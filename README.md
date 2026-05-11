@@ -64,8 +64,7 @@ sekien は `RawBlock("html", svg)` を出力するため、HTML を経由しな�
 | PDF engine | 動作 |
 |---|---|
 | `weasyprint` | ✓ (HTML 経由) |
-| `pdflatex` / `xelatex` / `lualatex` | ✗ (raw HTML を drop) |
-| `typst` | ✗ (raw HTML を drop) — Lua filter で回避可能 |
+| `pdflatex`, `typst` 等 | ✗ (raw HTML を drop) — Lua filter で回避可能 |
 
 #### HTML を経由しない PDF engine (Lua filter を使う)
 
