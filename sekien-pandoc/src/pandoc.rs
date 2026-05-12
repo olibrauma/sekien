@@ -1,5 +1,5 @@
-use crate::renderer::{render_all, RenderConfig};
 use anyhow::{Context, Result};
+use sekien::{render_all, RenderConfig};
 use serde_json::{json, Value};
 
 fn is_mermaid_block(block: &Value) -> bool {
@@ -33,7 +33,7 @@ pub fn filter(input: &str, config: &RenderConfig) -> Result<()> {
     }
 
     let (indices, codes): (Vec<usize>, Vec<String>) = mermaid.into_iter().unzip();
-    
+
     render_all(codes, config, move |svgs| {
         let mut ast = ast;
         let blocks_mut = ast["blocks"].as_array_mut().expect("blocks is array (verified above)");
@@ -113,3 +113,5 @@ mod tests {
         assert!(filter("not json", &config).is_err());
     }
 }
+
+

@@ -1,0 +1,13 @@
+[package]
+name = "sekien-cli"
+version = "0.1.0"
+edition = "2021"
+description = "sekien CLI — converts Mermaid diagrams to SVG"
+
+[[bin]]
+name = "sekien"
+path = "src/main.rs"
+
+[dependencies]
+sekien = { path = "../sekien" }
+anyhow = "1"

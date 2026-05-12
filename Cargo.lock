@@ -1664,6 +1664,23 @@ dependencies = [
 ]
 
 [[package]]
+name = "sekien-cli"
+version = "0.1.0"
+dependencies = [
+ "anyhow",
+ "sekien",
+]
+
+[[package]]
+name = "sekien-pandoc"
+version = "0.1.0"
+dependencies = [
+ "anyhow",
+ "sekien",
+ "serde_json",
+]
+
+[[package]]
 name = "selectors"
 version = "0.36.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"

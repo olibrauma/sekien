@@ -2,14 +2,15 @@
 
 sekien is a drawer of Mermaids — Mermaid コードを SVG に変換する CLI ツール。
 
-- OS ネイティブの WebView (macOS: WKWebView) を使用するため、Chromium のバンドルが不要
+- OS ネイティブの WebView (macOS: WKWebView, Linux: WebKit2GTK) を使用するため、Chromium のバンドルが不要
 - Pandoc の `--filter` オプションに対応
+- ライブラリ、CLI、Pandoc フィルタの 3 つのコンポーネントで構成
 
 ## mmdc との比較
 
 |  | sekien | mmdc |
 |---|---|---|
-| バイナリサイズ | 4.5 MB | 330 MB (node_modules) |
+| バイナリサイズ | ~4.5 MB | 330 MB (node_modules) |
 | 依存 | OS ネイティブ WebView | Puppeteer (Chromium 同梱) |
 | インストール | `cargo install` | `npm install -g` |
 | 実行速度 | ~0.6s | ~1.4s |
@@ -17,21 +18,23 @@ sekien is a drawer of Mermaids — Mermaid コードを SVG に変換する CLI 
 | Pandoc filter | ✓ (built-in) | 別途 mermaid-filter が必要 |
 | stdout 出力 | ✓ | ✗ (ファイル指定必須) |
 
-実行速度・メモリ使用量ともに優位なのは Chromium をバンドルせず OS の WebView を使うため。
-計測環境: macOS (Apple Silicon)、`bench/` の図を各 20 回平均。
-
 ## インストール
 
 ```bash
-cargo install sekien
+cargo install sekien-cli sekien-pandoc
 ```
 
-Linux の場合はビルドに WebKitGTK 関連のパッケージが必要です（Ubuntu 例）:
-`sudo apt install libwebkit2gtk-4.1-dev libgtk-3-dev`
+スタンドアロン CLI のみ使う場合:
+```bash
+cargo install sekien-cli
+```
+
+Linux の場合はビルドに WebKit2GTK 関連のパッケージが必要です（Fedora 例）:
+`sudo dnf install webkit2gtk4.1-devel gtk3-devel`
 
 ## 使い方
 
-### スタンドアロンモード
+### スタンドアロン CLI (`sekien`)
 
 ```bash
 # .mmd ファイル → SVG (stdout)
@@ -41,203 +44,54 @@ sekien diagram.mmd > diagram.svg
 cat diagram.mmd | sekien > diagram.svg
 ```
 
-#### 注意: ファイル名に拡張子をつけること
-
-sekien は引数がファイルパス (`.` を含む) かどうかで動作モードを切り替える。
-`.mmd` などの拡張子なしでファイルを渡すと、誤って Pandoc filter モードと判定される。
+### Pandoc filter (`sekien-pandoc`)
 
 ```bash
-sekien diagram      # NG: filter モードと判定される
-sekien diagram.mmd  # OK
+pandoc input.md -o output.html --filter sekien-pandoc
 ```
-
-### Pandoc filter モード
-
-```bash
-pandoc input.md -o output.html --filter sekien
-```
-
-#### 対応 PDF engine
-
-sekien は `RawBlock("html", svg)` を出力するため、HTML を経由しないエンジンでは SVG が落とされる。
-
-| PDF engine | 動作 |
-|---|---|
-| `weasyprint` | ✓ (HTML 経由) |
-| `pdflatex`, `typst` 等 | ✗ (raw HTML を drop) — Lua filter で回避可能 |
 
 #### HTML を経由しない PDF engine (Lua filter を使う)
 
-typst や pdflatex など raw HTML を drop する PDF engine では、sekien に同梱の Lua filter で
-SVG をファイルに書き出して Image ノードに変換することで回避できる。
-
-**注意 (Typst ユーザー):**
-Typst はデフォルトでプロジェクト外のファイルアクセスを制限しているため、Lua filter が作成する一時ファイル (`/tmp`) を読み込めるように `--pdf-engine-opt=--root=/` を付ける必要があります。
+typst や pdflatex など raw HTML を drop する PDF engine では、`sekien-pandoc` に同梱の Lua filter を併用することで SVG を画像として埋め込めます。
 
 ```bash
-# Lua filter をカレントディレクトリに書き出す
-sekien --print-lua-filter > sekien.lua
-
-pandoc input.md -o output.pdf \
-  --pdf-engine=typst \
-  --pdf-engine-opt=--root=/ \
-  --filter sekien \
-  --lua-filter sekien.lua \
-  -V mainfont="Hiragino Sans"
+# Lua filter を書き出し、pandoc に渡す
+sekien-pandoc --print-lua-filter > sekien.lua
+pandoc input.md -o output.pdf --filter sekien-pandoc --lua-filter sekien.lua
 ```
 
-インストール不要で使うには process substitution が使える (bash/zsh):
+## 注意: ヘッドレス実行 (Linux)
+
+Linux 環境のディスプレイがない環境（CI等）で実行する場合、`xvfb-run` が必要です。
 
 ```bash
-pandoc input.md -o output.pdf \
-  --pdf-engine=typst \
-  --pdf-engine-opt=--root=/ \
-  --filter sekien \
-  --lua-filter <(sekien --print-lua-filter) \
-  -V mainfont="Hiragino Sans"
-```
-
-常用するなら pandoc の user data directory に置くとパスなしで参照できる:
-
-```bash
-sekien --print-lua-filter > ~/.local/share/pandoc/filters/sekien.lua
-
-pandoc input.md -o output.pdf \
-  --pdf-engine=typst \
-  --filter sekien \
-  --lua-filter sekien.lua \
-  -V mainfont="Hiragino Sans"
-```
-
-## オプション
-
-### `--font`
-
-デフォルトは mermaid.js のデフォルト (`"trebuchet ms", verdana, arial, sans-serif`) で、
-未指定時はシステムのフォントフォールバックが効く。
-明示的に指定したい場合は `--font` フラグまたは環境変数を使う。
-
-```bash
-# フラグで指定 (スタンドアロンモード)
-sekien --font "Hiragino Sans" diagram.mmd > diagram.svg
-
-# 環境変数で指定 (pandoc filter モードでも有効)
-export SEKIEN_FONT="Hiragino Sans, Noto Sans JP, sans-serif"
-```
-
-pandoc filter モードでは pandoc がフラグを渡せないため、環境変数を使う。
-
-### `--theme`
-
-mermaid.js のテーマを指定できる。未指定時は mermaid.js のデフォルト (`default`) が使われる。
-
-```bash
-# フラグで指定 (スタンドアロンモード)
-sekien --theme dark diagram.mmd > diagram.svg
-
-# 環境変数で指定 (pandoc filter モードでも有効)
-SEKIEN_THEME=forest pandoc input.md -o output.html --filter sekien
-```
-
-指定できる値: `default` / `base` / `dark` / `forest` / `neutral` / `neo` / `neo-dark` / `redux` / `redux-dark` / `null`
-
-### `--look`
-
-図の描画スタイルを指定できる。
-
-```bash
-sekien --look handDrawn diagram.mmd > diagram.svg
-```
-
-指定できる値: `classic` / `handDrawn` / `neo`
-
-環境変数: `SEKIEN_LOOK`
-
-## 注意: ディスプレイ接続が必要
-
-sekien は OS ネイティブの WebView を使うため、いずれの OS でもディスプレイ接続が必要。
-ディスプレイなし環境で実行するには下記「ヘッドレス実行」を参照。
-
-## ヘッドレス実行 (Linux)
-
-sekien は OS ネイティブの WebView を使うため、Linux 環境では通常ディスプレイ接続が必要です。
-
-### Wayland セッションへの自動対応
-Wayland 環境下で非表示ウィンドウを作成する際の制限（GDK assertion 等）を回避するため、sekien は Wayland を検知すると自動的に `GDK_BACKEND=x11` をセットして自己再起動します。ユーザーは環境変数を意識することなく実行可能です。
-
-### ディスプレイなし環境 (CI等)
-`xvfb-run` がインストールされており、`DISPLAY` が設定されていない場合、sekien は自動的に `xvfb-run` を介して自身を再起動します。
-
-```bash
-# 手動での呼び出しも引き続き可能です
 xvfb-run sekien diagram.mmd > diagram.svg
 ```
 
-## ビルド
-
-```bash
-cargo build --release
-```
-
-`assets/mermaid.min.js` (v11.14.0) はリポジトリに同梱済み。更新する場合は npm から取得して差し替える。
-
-```bash
-npm install mermaid
-cp node_modules/mermaid/dist/mermaid.min.js assets/
-```
+また、レンダリングがうまくいかない場合は以下の環境変数を試してください：
+- `GDK_BACKEND=x11`
+- `WEBKIT_DISABLE_COMPOSITING_MODE=1`
 
 ## 構成
 
 ```
-sekien/
-├── Cargo.toml
-├── assets/
-│   └── mermaid.min.js       # コンパイル時にバイナリへ埋め込まれる
-└── src/
-    ├── main.rs              # エントリポイント・CLI 引数処理
-    ├── renderer.rs          # WebView レンダラ (コア)
-    └── pandoc.rs            # Pandoc filter
+sekien/                 # Workspace Root
+├── sekien/             # lib クレート (コアロジック)
+│   └── src/lib.rs      # WebView レンダラ
+├── sekien-cli/         # CLI クレート
+│   └── src/main.rs     # sekien コマンド
+└── sekien-pandoc/      # Pandoc フィルタクレート
+    └── src/
+        ├── main.rs     # sekien-pandoc コマンド
+        └── pandoc.rs   # Pandoc AST 処理
 ```
 
-### renderer.rs
+## テスト
 
-**tao** が提供する OS ネイティブ WebView を起動し、mermaid.js を使って
-Mermaid コードを SVG に変換する。
+```bash
+# ユニットテスト
+cargo test
 
+# 統合テスト (Linux では xvfb-run を推奨)
+xvfb-run ./test.sh
 ```
-render_all(blocks) の流れ:
-
-[Rust]                         [WKWebView / JS]
-  |                                  |
-  |-- WebView 起動、HTML ロード ----->|
-  |                                  |-- mermaid.initialize()
-  |                                  |-- ipc.postMessage({ type: 'ready' })
-  |<-- IPC: ready ------------------|
-  |-- evaluate_script: render(0) -->|
-  |                                  |-- mermaid.render(code)
-  |                                  |-- ipc.postMessage({ type: 'svg', svg })
-  |<-- IPC: svg ---------------------|
-  |-- evaluate_script: render(1) -->|
-  |          ...                     |
-  |-- evl.exit() (全ブロック完了)
-```
-
-IPC メッセージは `EventLoopProxy<String>` を介してやり取りし、
-`ControlFlow::Wait` でイベントドリブンに処理する。
-
-### pandoc.rs
-
-stdin の Pandoc AST JSON を受け取り、
-`CodeBlock` ノードのうち class に `mermaid` を持つものを
-`RawBlock("html", svg)` に差し替えて stdout に返す。
-
-```json
-// 変換前
-{ "t": "CodeBlock", "c": [["", ["mermaid"], []], "graph LR ..."] }
-
-// 変換後
-{ "t": "RawBlock", "c": ["html", "<svg ...>...</svg>"] }
-```
-
-pandoc は filter を `sekien <output-format>` として呼び出す。
-引数が `.` を含まない単語の場合は Pandoc filter モードと判定する。
