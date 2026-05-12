@@ -142,17 +142,30 @@ sekien --look handDrawn diagram.mmd > diagram.svg
 
 指定できる値: `classic` / `handDrawn` / `neo`
 
-## 注意: ヘッドレス実行 (Linux)
+## Linux での実行に関する注意
 
-sekien は OS ネイティブの WebView を使うため、Linux 環境のディスプレイがない環境（CI等）で実行する場合、`xvfb-run` が必要です。
+Linux 環境（特に Fedora や Ubuntu）では、WebKit2GTK の特性上、実行環境に応じて設定が必要な場合があります。
 
+### 実行環境ごとの必要設定
+
+| 環境 | `xvfb-run` | 必要環境変数 | 備考 |
+| :--- | :---: | :--- | :--- |
+| **デスクトップ (GUI)** | 不要 | 不要 | 通常のターミナルからの実行 |
+| **ヘッドレス / CI** | **必須** | `GDK_BACKEND=x11`<br>`WEBKIT_DISABLE_COMPOSITING_MODE=1` | ディスプレイがない環境 |
+| **Pandoc フィルタ** | **推奨** | 上記と同じ | サブプロセス実行時の安定性向上のため |
+
+### なぜこれらが必要なのか？
+
+- **`xvfb-run`**: WebKit2GTK は描画のために X11/Wayland への接続を必須とします。物理ディスプレイがない環境では仮想ディスプレイが必要です。
+- **`GDK_BACKEND=x11`**: Wayland 下での非表示ウィンドウ作成時の不安定さを回避し、XWayland 経由で安定動作させます。
+- **`WEBKIT_DISABLE_COMPOSITING_MODE=1`**: GPU 加速を無効化し、ソフトウェアレンダリングを強制します。`xvfb-run` 下や一部のドライバ環境で描画が止まる問題を解決します。
+
+#### Pandoc での実行例 (最も確実な設定)
 ```bash
-xvfb-run sekien diagram.mmd > diagram.svg
+WEBKIT_DISABLE_COMPOSITING_MODE=1 GDK_BACKEND=x11 xvfb-run -a \
+  pandoc input.md -o output.pdf --filter sekien-pandoc
 ```
 
-レンダリングがうまくいかない場合は以下の環境変数をセットしてください：
-- `GDK_BACKEND=x11`
-- `WEBKIT_DISABLE_COMPOSITING_MODE=1`
 
 ## 構成
 
