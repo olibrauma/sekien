@@ -163,7 +163,7 @@ Linux 環境（特に Fedora や Ubuntu）では、WebKit2GTK の特性上、実
 #### Pandoc での実行例 (最も確実な設定)
 ```bash
 WEBKIT_DISABLE_COMPOSITING_MODE=1 GDK_BACKEND=x11 xvfb-run -a \
-  pandoc input.md -o output.pdf --filter sekien-pandoc
+  pandoc input.md -o output.html --filter sekien-pandoc
 ```
 
 
