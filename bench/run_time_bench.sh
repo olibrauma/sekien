@@ -21,24 +21,13 @@ echo "Target: ${OUT_DIR}"
 echo ""
 
 # Linux ヘッドレス環境向け設定
-export GDK_BACKEND=x11
-export WEBKIT_DISABLE_COMPOSITING_MODE=1
-
-# xvfb-run の自動判定
-CMD_WRAPPER=""
-if [[ "$OSTYPE" == "linux-gnu"* ]] && [ -z "${DISPLAY:-}" ]; then
-  if command -v xvfb-run >/dev/null 2>&1; then
-    CMD_WRAPPER="xvfb-run -a"
-  else
-    echo "Warning: DISPLAY is not set and xvfb-run is not found. Benchmarks may fail."
-  fi
-fi
+export GDK_BACKEND=headless
 
 for f in $FILES; do
   echo "--- Benchmarking $f ---"
   hyperfine --warmup 3 --export-markdown "result_${f}.md" \
-    "${CMD_WRAPPER} ${SEKIEN} ${f}" \
-    "${CMD_WRAPPER} mmdc -p ${PUPPETEER_CONFIG} -i ${f} -o ${f}.svg"
+    "${SEKIEN} ${f}" \
+    "mmdc -p ${PUPPETEER_CONFIG} -i ${f} -o ${f}.svg"
   echo ""
 done
 
