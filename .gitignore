@@ -1,5 +1,4 @@
 /target/
 **/*.rs.bk
 test.svg
-*.mmd
 sekien.lua

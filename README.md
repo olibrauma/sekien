@@ -195,6 +195,20 @@ cargo test
 xvfb-run ./test.sh
 ```
 
+## ベンチマーク
+
+最新のリリースバイナリをビルドした状態で実行してください。
+
+```bash
+cargo build --release
+
+# 実行速度の比較 (hyperfine が必要)
+./bench/run_time_bench.sh
+
+# メモリ使用量 (RSS) の比較 (Python 3 が必要)
+./bench/run_mem_bench.sh
+```
+
 ## ビルド
 
 ```bash
