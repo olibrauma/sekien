@@ -303,4 +303,58 @@ mod tests {
 
 }
 
+/// Linux 環境で headless 動作（xvfb-run による自己再起）をサポートする最小 PoC。
+pub fn init_headless_env() {
+    #[cfg(target_os = "linux")]
+    {
+        use std::env;
+        use std::io::{BufRead, Write};
+        use std::process::{Command, Stdio, exit};
+
+        if env::var("SEKIEN_SURROGATE").is_ok() {
+            return;
+        }
+
+        let gdk_backend = env::var("GDK_BACKEND").unwrap_or_default();
+        let no_display = env::var("DISPLAY").is_err() && env::var("WAYLAND_DISPLAY").is_err();
+
+        if gdk_backend == "headless" || no_display {
+            let mut child = Command::new("xvfb-run")
+                .arg("-a")
+                .env("GDK_BACKEND", "x11")
+                .env("WEBKIT_DISABLE_COMPOSITING_MODE", "1")
+                .env("SEKIEN_SURROGATE", "1")
+                .arg(env::current_exe().expect("failed to get self path"))
+                .args(env::args().skip(1))
+                .stdin(Stdio::inherit())
+                .stdout(Stdio::piped())
+                .stderr(Stdio::null())
+                .spawn()
+                .unwrap_or_else(|_| exit(1));
+
+            let stdout = child.stdout.take().expect("failed to open stdout");
+            let reader = std::io::BufReader::new(stdout);
+            let mut started = false;
+
+            for line in reader.lines() {
+                if let Ok(line) = line {
+                    if !started {
+                        let trimmed = line.trim_start();
+                        if trimmed.starts_with('<') || trimmed.starts_with('{') || trimmed.starts_with('[') {
+                            started = true;
+                        }
+                    }
+                    if started {
+                        println!("{}", line);
+                        let _ = std::io::stdout().flush();
+                    }
+                }
+            }
+
+            let status = child.wait().unwrap_or_else(|_| exit(1));
+            exit(status.code().unwrap_or(1));
+        }
+    }
+}
+
 

@@ -90,6 +90,8 @@ fn read_mermaid(file_path: Option<&str>) -> Result<String> {
 }
 
 fn main() -> Result<()> {
+    sekien::init_headless_env();
+
     let raw: Vec<String> = std::env::args().skip(1).collect();
     let (options, command) = parse_args(raw).unwrap_or_else(|e| {
         eprintln!("{e}");
