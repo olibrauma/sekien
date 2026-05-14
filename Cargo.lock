@@ -1658,6 +1658,7 @@ name = "sekien"
 version = "0.1.0"
 dependencies = [
  "anyhow",
+ "gtk",
  "serde_json",
  "tao",
  "wry",
