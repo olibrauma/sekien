@@ -23,7 +23,7 @@ Max RSS は Xvfb を含む全子プロセスの合計最大値。
 
 ## インストール
 
-sekien は、スタンドアロン CLI の `sekien` と、Pandoc 連携用の `sekien-pandoc` の 2 つのツールを同梱しています。
+sekien は、スタンドアロン CLI の `sekien`（クレート名: `sekien-cli`）と、Pandoc 連携用の `sekien-pandoc` の 2 つのツールを同梱しています。
 `cargo install` を実行すると、自動的にリリースビルド（最適化済み）がインストールされます。
 
 ```bash
