@@ -29,7 +29,6 @@ Rendering options (via environment variables):
 }
 
 fn main() {
-    sekien::init_headless_env();
 
     let args: Vec<String> = std::env::args().skip(1).collect();
 

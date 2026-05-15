@@ -35,6 +35,9 @@ use tao::{
     window::{Window, WindowBuilder},
 };
 
+#[cfg(target_os = "linux")]
+mod linux_display;
+
 const MERMAID_JS: &str = include_str!("../assets/mermaid.min.js");
 
 /// 同梱している mermaid.js のバージョン。
@@ -219,6 +222,9 @@ where
         std::process::exit(0);
     }
 
+    #[cfg(target_os = "linux")]
+    linux_display::ensure_display()?;
+
     let event_loop = EventLoopBuilder::<String>::with_user_event().build();
     let proxy = event_loop.create_proxy();
 
@@ -302,74 +308,3 @@ mod tests {
     }
 
 }
-
-/// Linux 環境で headless 動作（xvfb-run による自己再起）をサポートする PoC v3。
-pub fn init_headless_env() {
-    #[cfg(target_os = "linux")]
-    {
-        use std::env;
-        use std::io::{Read, Write};
-        use std::process::{Command, Stdio, exit};
-
-        // 1. すでに再起済みなら、環境を強制して戻る
-        if env::var("SEKIEN_SURROGATE").is_ok() {
-            env::set_var("GDK_BACKEND", "x11");
-            env::set_var("WEBKIT_DISABLE_COMPOSITING_MODE", "1");
-            return;
-        }
-
-        // 2. ディスプレイ接続テスト
-        // GDK_BACKEND=x11 を強制して初期化を試みることで、
-        // 不完全な Wayland 環境下での誤判定を回避する。
-        let needs_xvfb = if env::var("GDK_BACKEND").as_deref() == Ok("headless") {
-            true
-        } else {
-            env::set_var("GDK_BACKEND", "x11");
-            gtk::init().is_err()
-        };
-
-        if needs_xvfb {
-            // xvfb-run の存在確認
-            if Command::new("xvfb-run").arg("--help").stdout(Stdio::null()).stderr(Stdio::null()).status().is_err() {
-                eprintln!("Error: 'xvfb-run' not found. It is required for running sekien in headless environments.");
-                eprintln!("Please install 'Xvfb' package (e.g. 'sudo dnf install xorg-x11-server-Xvfb').");
-                exit(1);
-            }
-
-            let mut child = Command::new("xvfb-run")
-                .arg("-a")
-                .env("GDK_BACKEND", "x11")
-                .env("WEBKIT_DISABLE_COMPOSITING_MODE", "1")
-                .env("SEKIEN_SURROGATE", "1")
-                .env_remove("WAYLAND_DISPLAY")
-                .arg(env::current_exe().expect("failed to get self path"))
-                .args(env::args().skip(1))
-                .stdin(Stdio::inherit())
-                .stdout(Stdio::piped())
-                .stderr(Stdio::null())
-                .spawn()
-                .unwrap_or_else(|_| exit(1));
-
-            let mut stdout = child.stdout.take().expect("failed to open stdout");
-            let mut buf = [0u8; 1];
-
-            // 3. データ開始文字 ('<', '{', '[') を見つけるまで読み飛ばす (サニタイズ)
-            loop {
-                if stdout.read_exact(&mut buf).is_err() { break; }
-                if buf[0] == b'<' || buf[0] == b'{' || buf[0] == b'[' {
-                    let _ = std::io::stdout().write_all(&buf);
-                    break;
-                }
-            }
-
-            // 4. 以降はバイナリとしてそのまま stdout へストリームリレー
-            let _ = std::io::copy(&mut stdout, &mut std::io::stdout());
-            let _ = std::io::stdout().flush();
-
-            let status = child.wait().unwrap_or_else(|_| exit(1));
-            exit(status.code().unwrap_or(1));
-        }
-    }
-}
-
-
