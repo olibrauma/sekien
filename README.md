@@ -2,14 +2,13 @@
 
 sekien is a drawer of Mermaids — Mermaid コードを SVG に変換する CLI ツール。
 
-- OS ネイティブの WebView (macOS: WKWebView) を使用するため、Chromium のバンドルが不要
-- Pandoc の `--filter` オプションに対応
+Mermaid 公式の [`mmdc`](https://github.com/mermaid-js/mermaid-cli) に比べて、seien は **97% 小さく**、**35% 軽く**、**1.8 倍速い**。
 
 ## mmdc との比較
 
 |  | sekien | mmdc |
 |---|---|---|
-| バイナリサイズ | 4.5 MB | 330 MB (node_modules) |
+| バイナリサイズ | 9.8 MB (2 つのバイナリの合計) | 330 MB (node_modules) |
 | 依存 | OS ネイティブ WebView | Puppeteer (Chromium 同梱) |
 | インストール | `cargo install` (2種同梱) | `npm install -g` |
 | 実行速度 | ~1.2s | ~2.2s |
