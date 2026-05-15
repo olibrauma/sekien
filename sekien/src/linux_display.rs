@@ -27,6 +27,10 @@ use std::time::Duration;
 /// 上書きする (既存の `DISPLAY` があっても使わない)。
 pub fn ensure_display() -> Result<()> {
     std::env::set_var("GDK_BACKEND", "x11");
+    // GPU 加速を無効化して libEGL 警告を抑制し、ソフトウェアレンダリングを強制する
+    std::env::set_var("WEBKIT_DISABLE_COMPOSITING_MODE", "1");
+    std::env::set_var("LIBGL_ALWAYS_SOFTWARE", "1");
+
     spawn_xvfb().context("failed to start Xvfb (install xvfb)")?;
     Ok(())
 }
