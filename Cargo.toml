@@ -5,9 +5,21 @@ edition = "2021"
 description = "sekien — converts Mermaid diagrams to SVG"
 license = "MIT OR Apache-2.0"
 
+[workspace]
+members = [
+    ".",
+    "src/api/rust",
+    "util/bench",
+]
+resolver = "2"
+
 [[bin]]
 name = "sekien"
 path = "src/main.rs"
+
+[[test]]
+name = "integration"
+path = "util/tests/integration.rs"
 
 [dependencies]
 wry = "0.55"
