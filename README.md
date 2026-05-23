@@ -8,28 +8,56 @@ Mermaid 公式の [`mmdc`](https://github.com/mermaid-js/mermaid-cli) に比べ�
 
 OS ネイティブの WebView を活用することで、標準的な `mmdc` (Puppeteer/Chromium ベース) に比べ圧倒的に軽量・高速に動作します。
 
-### macOS (ネイティブ描画)
-計測環境: macOS (arm64)、sekien 0.1.0 (mermaid.js 11.14.0) vs mmdc 11.12.0、`util/bench/` の 3 図の中央値。
+|  | platform | sekien | mmdc |
+|---|---|---|---|
+| バイナリサイズ | Mac | **~10 MB (97% 小さい)** | 330 MB (node_modules) |
+| 依存 | Mac | OS ネイティブ WebView | Puppeteer (Chromium 同梱) |
+| バイナリサイズ | Linux | **4.8 MB (99% 小さい)** | 401 MB |
+| 依存 | Linux | OS ネイティブ WebView + Xvfb | 〃 |
 
-|  | sekien | mmdc |
-|---|---|---|
-| バイナリサイズ | **~10 MB (97% 小さい)** | 330 MB (node_modules) |
-| 依存 | OS ネイティブ WebView | Puppeteer (Chromium 同梱) |
-| 実行速度 (中央値) | **~360 ms (67% 速い)** | ~1.1 s |
-| メモリ使用量 (RSS) | **~90 MB (87% 軽い)** | ~690 MB |
-
-### Linux (内部 Xvfb 描画)
-計測環境: Linux (x86_64)、内部 Xvfb 使用、`util/bench/` の 3 図の中央値。
-Max RSS は Xvfb を含む全子プロセスの合計最大値。
-
-|  | sekien | mmdc |
-|---|---|---|
-| バイナリサイズ | **~10 MB (97% 小さい)** | 330 MB (node_modules) |
-| 実行速度 (中央値) | **~800 ms (27% 速い)** | ~1.1 s |
-| メモリ使用量 (Max RSS) | **~440 MB (30% 軽い)** | ~630 MB |
+### 性能比較
 
 いずれの環境でも実行速度・メモリ使用量ともに優位なのは、重量級の Chromium をバンドルせず、OS 標準の描画エンジンをダイレクトに叩くためです。
 また、Pandoc 連携用の専用フィルタ ([`sekien-pandoc`](../2026-05-20-sekien-pandoc)) を同梱しており、別途 `mermaid-filter` 等を導入する必要もありません。
+
+|  | platform | sekien | mmdc |
+|---|---|---|---|
+| 実行速度 (中央値) | Mac | **~360 ms (67% 速い)** | ~1.1 s |
+| メモリ使用量 (RSS) | Mac | **~90 MB (87% 軽い)** | ~690 MB |
+| 実行速度 (中央値) | Linux | **~800 ms (27% 速い)** | ~1.1 s |
+| メモリ使用量 (Max RSS) | Linux | **~440 MB (30% 軽い)** | ~630 MB |
+
+#### 実行速度 (ms)
+```mermaid
+xychart-beta
+    title "Execution Time (Lower is better)"
+    x-axis ["Mac (sekien)", "Mac (mmdc)", "Linux (sekien)", "Linux (mmdc)"]
+    y-axis "Time (ms)" 0 --> 1200
+    bar [360, 1100, 800, 1100]
+```
+
+#### メモリ使用量 (MB)
+```mermaid
+xychart-beta
+    title "Memory Usage (Lower is better)"
+    x-axis ["Mac (sekien)", "Mac (mmdc)", "Linux (sekien)", "Linux (mmdc)"]
+    y-axis "RSS (MB)" 0 --> 800
+    bar [90, 690, 440, 630]
+```
+
+#### バイナリサイズ (MB)
+```mermaid
+xychart-beta
+    title "Binary Size (Lower is better)"
+    x-axis ["sekien (total)", "mmdc (node_modules)"]
+    y-axis "Disk (MB)" 0 --> 450
+    bar [4.8, 401]
+```
+
+- `util/bench/` の 3 図の中央値。 mmdc は 11.12.0
+- 計測環境: macOS (arm64)、sekien 0.1.0 (mermaid.js 11.14.0)
+- 計測環境: Linux (x86_64)、内部 Xvfb 使用
+- Max RSS は Xvfb を含む全子プロセスの合計最大値。
 
 ## インストール
 
