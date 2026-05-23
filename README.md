@@ -6,21 +6,29 @@ Mermaid 公式の [`mmdc`](https://github.com/mermaid-js/mermaid-cli) に比べ�
 
 ## mmdc との比較
 
+OS ネイティブの WebView を活用することで、標準的な `mmdc` (Puppeteer/Chromium ベース) に比べ圧倒的に軽量・高速に動作します。
+
+### macOS (ネイティブ描画)
+計測環境: macOS (arm64)、sekien 0.1.0 (mermaid.js 11.14.0) vs mmdc 11.12.0、`util/bench/` の 3 図の中央値。
+
 |  | sekien | mmdc |
 |---|---|---|
-| バイナリサイズ | 4.7 MB | 330 MB (node_modules) |
+| バイナリサイズ | ~10 MB (合計) | 330 MB (node_modules) |
 | 依存 | OS ネイティブ WebView | Puppeteer (Chromium 同梱) |
-| インストール | `cargo install` | `npm install -g` |
-| 実行速度 | ~360 ms | ~1.1 s |
-| メモリ使用量 (Max RSS) | ~88 MB | ~690 MB |
-| Pandoc filter | ✓ ([sekien-pandoc](../2026-05-20-sekien-pandoc)) | 別途 mermaid-filter が必要 |
-| stdout 出力 | ✓ | ✗ (ファイル指定必須) |
+| 実行速度 (中央値) | **~360 ms** | ~1.1 s |
+| メモリ使用量 (RSS) | **~90 MB** | ~690 MB |
 
-実行速度・メモリ使用量ともに優位なのは Chromium をバンドルせず OS の WebView を使うため。
-計測環境: macOS (arm64)、sekien 0.1.0 (mermaid.js 11.14.0) vs mmdc 11.12.0、
-`bench/` の 3 図 (flowchart / gitgraph / sequence) を warmup 3 + 計測 10 回、median を表示。
-Max RSS は全子プロセスの合計最大値 (sekien は単一プロセス、mmdc は Puppeteer + Chromium の chrome_crashpad_handler / renderer 等を含む)。
-詳細は [bench/](bench/) を参照。
+### Linux (内部 Xvfb 描画)
+計測環境: Linux (x86_64)、内部 Xvfb 使用、`util/bench/` の 3 図の中央値。
+Max RSS は Xvfb を含む全子プロセスの合計最大値。
+
+|  | sekien | mmdc |
+|---|---|---|
+| 実行速度 (中央値) | **~800 ms** | ~1.1 s |
+| メモリ使用量 (Max RSS) | **~440 MB** | ~630 MB |
+
+いずれの環境でも実行速度・メモリ使用量ともに優位なのは、重量級の Chromium をバンドルせず、OS 標準の描画エンジンをダイレクトに叩くためです。
+また、Pandoc 連携用の専用フィルタ ([`sekien-pandoc`](../2026-05-20-sekien-pandoc)) を同梱しており、別途 `mermaid-filter` 等を導入する必要もありません。
 
 ## インストール
 
