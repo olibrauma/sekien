@@ -214,17 +214,33 @@ fn build_command(sekien: &OsStr, config: &RenderConfig) -> Command {
     cmd
 }
 
-/// sekien の stderr テキストから `Error: mermaid block N: <msg>` 行を抽出して
-/// `{ N: msg }` map にする。それ以外の行は無視する。
+/// sekien の stderr テキストから構造化 XML レコードを抽出し、`{ N: msg }` map にする。
 ///
-/// この protocol は sekien バイナリと sekien-api の間で固定されている。
-/// 形式が変わったら両側を同時に更新する必要がある (DESIGN.md 参照)。
+/// 形式: `<!-- block: N -->\n<e><![CDATA[ message ]]></e>\n` (複数件は `\0` 区切り)
+/// メッセージ内の `]]>` は `]]]]><![CDATA[>` にエスケープされているため、パース時に戻す。
 fn parse_stderr_failures(stderr: &str) -> HashMap<usize, String> {
-    stderr.lines()
-        .filter_map(|line| {
-            let rest = line.strip_prefix("Error: mermaid block ")?;
-            let (num, msg) = rest.split_once(": ")?;
-            Some((num.parse().ok()?, msg.to_string()))
+    stderr
+        .split('\0')
+        .filter(|chunk| !chunk.is_empty())
+        .filter_map(|chunk| {
+            let chunk = chunk.trim();
+
+            // ブロック番号をコメント行から抽出
+            let id_start = chunk.find("<!-- block: ")? + "<!-- block: ".len();
+            let id_end = chunk[id_start..].find(" -->")?;
+            let id: usize = chunk[id_start..id_start + id_end].parse().ok()?;
+
+            // CDATA セクション内のメッセージを抽出
+            let cdata_prefix = "<![CDATA[";
+            let cdata_suffix = "]]>";
+            let msg_start = chunk.find(cdata_prefix)? + cdata_prefix.len();
+            let msg_end = chunk.rfind(cdata_suffix)?;
+            let raw_msg = &chunk[msg_start..msg_end];
+
+            // エスケープを解除: ]]]]> <![CDATA[ > -> ]]>
+            let msg = raw_msg.replace("]]]]><![CDATA[>", "]]>");
+
+            Some((id, msg))
         })
         .collect()
 }
@@ -293,13 +309,14 @@ pub fn render_blocks(
     }
 
     // 成功した SVG: sekien は `\0` 区切りで成功 block のみを stdout に流す。
-    // 末尾 / 先頭の `\0` は出さない設計なので、空 stdout は 0 件、N 件なら
-    // N-1 個の `\0` で区切られる。空 slice は除外する。
+    // 末尾には行儀の良い出力のために `\n` が付いているので trim する。
     let success_svgs: Vec<String> = output
         .stdout
         .split(|&b| b == 0)
         .filter(|s| !s.is_empty())
-        .map(|bytes| std::str::from_utf8(bytes).map(|s| s.to_string()))
+        .map(|bytes| {
+            std::str::from_utf8(bytes).map(|s| s.trim().to_string())
+        })
         .collect::<std::result::Result<Vec<_>, _>>()?;
 
     let stderr_str = std::str::from_utf8(&output.stderr)?;
@@ -526,13 +543,19 @@ mod tests {
 
     #[test]
     fn parse_stderr_failures_extracts_block_numbers() {
-        let stderr = "Error: mermaid block 1: Lexical error on line 2\n\
-                      Error: mermaid block 3: Parse error\n\
-                      some other stderr line";
+        let stderr = "<!-- block: 1 -->\n<e><![CDATA[Lexical error on line 2]]></e>\n\0\
+                      <!-- block: 3 -->\n<e><![CDATA[Parse error]]></e>\n";
         let failures = parse_stderr_failures(stderr);
         assert_eq!(failures.len(), 2);
         assert_eq!(failures.get(&1).unwrap(), "Lexical error on line 2");
         assert_eq!(failures.get(&3).unwrap(), "Parse error");
+    }
+
+    #[test]
+    fn parse_stderr_failures_unescapes_cdata_end() {
+        let stderr = "<!-- block: 1 -->\n<e><![CDATA[Error at ]]]]><![CDATA[> line 1]]></e>\n";
+        let failures = parse_stderr_failures(stderr);
+        assert_eq!(failures.get(&1).unwrap(), "Error at ]]> line 1");
     }
 
     #[test]
@@ -541,18 +564,16 @@ mod tests {
     }
 
     #[test]
-    fn parse_stderr_failures_ignores_non_matching_lines() {
+    fn parse_stderr_failures_ignores_malformed_xml() {
         let stderr = "Warning: foo\n\
                       Error: not from sekien\n\
-                      Error: mermaid block abc: invalid number\n";
+                      <!-- block: abc -->\n<e>invalid</e>\n";
         assert!(parse_stderr_failures(stderr).is_empty());
     }
 
     #[test]
     fn parse_stderr_failures_handles_colon_in_message() {
-        // split_once(": ") は最初の ": " で分割するので、メッセージ内の
-        // コロンは保持される
-        let stderr = "Error: mermaid block 2: Parse error: unexpected token\n";
+        let stderr = "<!-- block: 2 -->\n<e><![CDATA[Parse error: unexpected token]]></e>\n";
         let failures = parse_stderr_failures(stderr);
         assert_eq!(failures.get(&2).unwrap(), "Parse error: unexpected token");
     }

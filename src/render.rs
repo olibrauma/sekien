@@ -254,6 +254,8 @@ struct StreamState {
     end_received: bool,
     /// stdout に SVG を既に書き出したか (block 間 separator `\0` の判定)
     wrote_any_svg: bool,
+    /// stderr にエラーを既に書き出したか (block 間 separator `\0` の判定)
+    wrote_any_error: bool,
     /// webview の ready 状態と render 中 block の有無
     pipeline: Pipeline,
 }
@@ -265,6 +267,7 @@ impl StreamState {
             queue: VecDeque::new(),
             end_received: false,
             wrote_any_svg: false,
+            wrote_any_error: false,
             pipeline: Pipeline::NotReady,
         }
     }
@@ -324,17 +327,33 @@ impl StreamState {
                         self.pipeline
                     )));
                 }
-                write_svg_to_stdout(&svg, self.wrote_any_svg)
+                // SVG レコード末尾に \n を付けて行儀の良い出力にする。
+                // 複数レコード間は \0 で区切る (2 件目以降の直前に \0 を挿入)。
+                let mut svg_with_newline = svg;
+                svg_with_newline.push('\n');
+                write_to_stdout(&svg_with_newline, self.wrote_any_svg)
                     .map_err(|e| format!("failed to write SVG to stdout: {e}"))?;
                 self.wrote_any_svg = true;
                 self.pipeline = Pipeline::Idle;
                 self.try_dispatch_next(wv)
             }
             IpcMessage::Error { id, error } => {
-                // sekien-api はこの形式を行単位で parse して per-block 結果を
-                // 再構築するので、必ず 1 行に収めて出す (改行は空白に置換)
-                let one_line = error.replace(['\n', '\r'], " ");
-                eprintln!("Error: mermaid block {id}: {one_line}");
+                if !matches!(self.pipeline, Pipeline::Awaiting(n) if n == id) {
+                    return Err(ipc_protocol_error(&format!(
+                        "'error' id {id} does not match pipeline state {:?}",
+                        self.pipeline
+                    )));
+                }
+                // stderr への出力を構造化 XML 形式にする。
+                // <!-- block: N -->\n<e><![CDATA[ message ]]></e>\n
+                // 複数レコード間は \0 で区切る。
+                let escaped = error.replace("]]>", "]]]]><![CDATA[>");
+                let xml = format!(
+                    "<!-- block: {id} -->\n<e><![CDATA[{escaped}]]></e>\n"
+                );
+                write_to_stderr(&xml, self.wrote_any_error)
+                    .map_err(|e| format!("failed to write error to stderr: {e}"))?;
+                self.wrote_any_error = true;
                 self.pipeline = Pipeline::Idle;
                 self.try_dispatch_next(wv)
             }
@@ -353,12 +372,21 @@ fn dispatch_render(id: usize, content: &str, wv: &WebView) -> Result<(), String>
         .map_err(|e| format!("failed to dispatch render({id}) to webview: {e}"))
 }
 
-fn write_svg_to_stdout(svg: &str, write_separator: bool) -> io::Result<()> {
+fn write_to_stdout(content: &str, write_separator: bool) -> io::Result<()> {
     let mut out = io::stdout().lock();
     if write_separator {
         out.write_all(&[0])?;
     }
-    out.write_all(svg.as_bytes())?;
+    out.write_all(content.as_bytes())?;
+    out.flush()
+}
+
+fn write_to_stderr(content: &str, write_separator: bool) -> io::Result<()> {
+    let mut out = io::stderr().lock();
+    if write_separator {
+        out.write_all(&[0])?;
+    }
+    out.write_all(content.as_bytes())?;
     out.flush()
 }
 
