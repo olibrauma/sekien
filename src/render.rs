@@ -173,8 +173,16 @@ fn read_blocks<R: Read>(mut reader: R, mut on_event: impl FnMut(LoopEvent)) {
     loop {
         match reader.read(&mut chunk) {
             Ok(0) => {
-                if !buf.is_empty() && !emit_block(&mut buf, &mut on_event) {
-                    return;
+                // EOF 到着。バッファに残っているデータがあれば最後のブロックとして emit する。
+                // ただし、末尾の改行やスペースのみのデータは、対話モード等での意図しない
+                // 空ブロック生成を防ぐため無視する。
+                if !buf.is_empty() {
+                    let s = String::from_utf8_lossy(&buf);
+                    if !s.trim().is_empty() {
+                        if !emit_block(&mut buf, &mut on_event) {
+                            return;
+                        }
+                    }
                 }
                 on_event(LoopEvent::InputEnd);
                 return;

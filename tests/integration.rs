@@ -257,3 +257,29 @@ fn all_blocks_fail_yields_empty_stdout_and_three_stderr_lines() {
     let lines = stderr.lines().filter(|l| l.contains("mermaid block")).count();
     assert_eq!(lines, 3, "expected 3 error lines, got {lines}");
 }
+
+#[test]
+fn trailing_whitespace_after_nul_is_ignored() {
+    let out = run_stdin(b"graph LR\n  A --> B\0\n");
+    assert!(out.status.success());
+    let svg_count = count_subseq(&out.stdout, b"<svg");
+    assert_eq!(svg_count, 1, "expected 1 SVG, got {svg_count}");
+    assert!(
+        out.stderr.is_empty(),
+        "stderr should be empty, got: {:?}",
+        String::from_utf8_lossy(&out.stderr)
+    );
+}
+
+#[test]
+fn trailing_nul_is_ignored() {
+    let out = run_stdin(b"graph LR\n  A --> B\0");
+    assert!(out.status.success());
+    let svg_count = count_subseq(&out.stdout, b"<svg");
+    assert_eq!(svg_count, 1, "expected 1 SVG, got {svg_count}");
+    assert!(
+        out.stderr.is_empty(),
+        "stderr should be empty, got: {:?}",
+        String::from_utf8_lossy(&out.stderr)
+    );
+}
