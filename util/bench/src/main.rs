@@ -43,7 +43,9 @@ fn bench_dir() -> PathBuf {
 fn default_sekien_path() -> PathBuf {
     bench_dir()
         .parent()
-        .expect("bench/ should have a parent (sekien crate root)")
+        .expect("bench/ should have a parent (util/)")
+        .parent()
+        .expect("util/ should have a parent (sekien crate root)")
         .join("target/release/sekien")
 }
 
