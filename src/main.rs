@@ -1,5 +1,9 @@
-use anyhow::{Context, Result};
-use sekien::{RenderConfig, MERMAID_VERSION};
+mod render;
+#[cfg(target_os = "linux")]
+mod linux_display;
+
+use anyhow::{bail, Context, Result};
+use render::{RenderConfig, MERMAID_VERSION};
 use std::env;
 use std::fs;
 use std::io::{self, Read};
@@ -11,6 +15,17 @@ fn usage() -> String {
 Usage:
   sekien [options] [file.mmd]         Mermaid → SVG (stdout)
   cat diagram.mmd | sekien            Mermaid → SVG (stdout)
+
+sekien は cat のような streaming プロセス。stdin (またはファイル) を EOF まで
+読み続け、`\\0` (NUL byte) を block 区切りとして 1 つずつ Mermaid → SVG に変換し、
+SVG を `\\0` 区切りで stdout に流す。
+
+block 単位の Mermaid 解析エラーは stderr に `Error: mermaid block N: <msg>`
+を 1 行出して継続する (exit 0)。sekien 自身の失敗 (display 初期化失敗、
+malformed IPC、stdout 書き込み失敗等) は exit 1。
+
+対話モードで使う場合、terminal 上で Ctrl + @ が NUL byte を入力する手段。
+EOF (Ctrl + D) で sekien を終了させる。
 
 Options:
   --font <font>          Font family for diagram text (default: mermaid.js default)
@@ -41,7 +56,7 @@ enum Command {
     Render { file: Option<String> },
 }
 
-fn parse_args(raw: Vec<String>) -> Result<(Options, Command), String> {
+fn parse_args(raw: Vec<String>) -> Result<(Options, Command)> {
     let mut options = Options::default();
     let mut rest: Vec<String> = Vec::new();
     let mut iter = raw.into_iter();
@@ -51,51 +66,45 @@ fn parse_args(raw: Vec<String>) -> Result<(Options, Command), String> {
             "--help" | "-h" => return Ok((Options::default(), Command::Help)),
             "--version" | "-v" => return Ok((Options::default(), Command::Version)),
             "--font" => {
-                options.font_family = Some(iter.next().ok_or("--font requires a value")?);
+                options.font_family = Some(iter.next().context("--font requires a value")?);
             }
             "--theme" => {
-                options.theme = Some(iter.next().ok_or("--theme requires a value")?);
+                options.theme = Some(iter.next().context("--theme requires a value")?);
             }
             "--look" => {
-                options.look = Some(iter.next().ok_or("--look requires a value")?);
+                options.look = Some(iter.next().context("--look requires a value")?);
             }
             _ if arg.starts_with('-') => {
-                return Err(format!("error: unknown option: {arg}"));
+                bail!("unknown option: {arg}");
             }
             _ => rest.push(arg),
         }
     }
 
-    let files: Vec<String> = rest;
-    if files.len() > 1 {
-        return Err(format!(
-            "error: too many arguments (sekien takes at most one file)\n\
+    if rest.len() > 1 {
+        bail!(
+            "too many arguments (sekien takes at most one file)\n\
              hint:  for multiple files, use a shell loop:\n\
              \t for f in *.mmd; do sekien \"$f\" > \"${{f%.mmd}}.svg\"; done"
-        ));
+        );
     }
 
-    Ok((options, Command::Render { file: files.into_iter().next() }))
+    Ok((options, Command::Render { file: rest.into_iter().next() }))
 }
 
-fn read_mermaid(file_path: Option<&str>) -> Result<String> {
+fn open_reader(file_path: Option<&str>) -> Result<Box<dyn Read + Send>> {
     match file_path {
-        Some(p) => fs::read_to_string(p).with_context(|| format!("cannot read '{p}'")),
-        None => {
-            let mut buf = String::new();
-            io::stdin().read_to_string(&mut buf).context("failed to read stdin")?;
-            Ok(buf)
+        Some(p) => {
+            let f = fs::File::open(p).with_context(|| format!("cannot read '{p}'"))?;
+            Ok(Box::new(f))
         }
+        None => Ok(Box::new(io::stdin())),
     }
 }
 
 fn main() -> Result<()> {
-
-    let raw: Vec<String> = std::env::args().skip(1).collect();
-    let (options, command) = parse_args(raw).unwrap_or_else(|e| {
-        eprintln!("{e}");
-        std::process::exit(1);
-    });
+    let raw: Vec<String> = env::args().skip(1).collect();
+    let (options, command) = parse_args(raw)?;
 
     let config = RenderConfig {
         font_family: options.font_family.or_else(|| env::var("SEKIEN_FONT").ok()),
@@ -109,12 +118,8 @@ fn main() -> Result<()> {
             println!("sekien {} (mermaid.js {})", env!("CARGO_PKG_VERSION"), MERMAID_VERSION);
         }
         Command::Render { file } => {
-            let code = read_mermaid(file.as_deref())?;
-            sekien::render_all(vec![code], &config, |svgs| {
-                if !svgs.is_empty() {
-                    println!("{}", svgs[0]);
-                }
-            })?;
+            let reader = open_reader(file.as_deref())?;
+            render::run_stream(reader, &config)?;
         }
     }
 
@@ -220,5 +225,3 @@ mod tests {
         assert!(parse_args(args(&["--unknown", "diagram.mmd"])).is_err());
     }
 }
-
-

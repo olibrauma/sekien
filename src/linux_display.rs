@@ -65,18 +65,9 @@ fn spawn_xvfb() -> Result<()> {
         let _ = reader.read_to_end(&mut buf);
     });
 
-    match rx.recv_timeout(Duration::from_secs(10)) {
-        Ok(Ok(display_num)) => {
-            std::env::set_var("DISPLAY", format!(":{display_num}"));
-            Ok(())
-        }
-        Ok(Err(e)) => {
-            let _ = child.kill();
-            Err(e)
-        }
-        Err(_) => {
-            let _ = child.kill();
-            Err(anyhow!("Xvfb did not become ready in time"))
-        }
-    }
+    let display_num = rx.recv_timeout(Duration::from_secs(10))
+        .unwrap_or_else(|_| Err(anyhow!("Xvfb did not become ready in time")))
+        .inspect_err(|_| { let _ = child.kill(); })?;
+    std::env::set_var("DISPLAY", format!(":{display_num}"));
+    Ok(())
 }

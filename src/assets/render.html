@@ -1,0 +1,28 @@
+<!DOCTYPE html>
+<html>
+<head>
+<script>{{MERMAID_JS}}</script>
+<style>
+  html, body { background: transparent !important; }
+</style>
+</head>
+<body>
+<script>
+mermaid.initialize({
+  startOnLoad: false,
+  htmlLabels: false,
+{{EXTRA_CONFIG}}});
+
+window.renderMermaid = async function(id, code) {
+  try {
+    const { svg } = await mermaid.render('d' + id, code);
+    window.ipc.postMessage(JSON.stringify({ type: 'svg', id: id, svg: svg }));
+  } catch(e) {
+    window.ipc.postMessage(JSON.stringify({ type: 'error', id: id, error: e.message }));
+  }
+};
+
+window.ipc.postMessage(JSON.stringify({ type: 'ready' }));
+</script>
+</body>
+</html>
