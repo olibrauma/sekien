@@ -107,6 +107,7 @@ sekien を終了させる手段。
 | `--font <name>` | `SEKIEN_FONT` | フォント (CSS font-family 形式) |
 | `--theme <name>` | `SEKIEN_THEME` | mermaid.js テーマ |
 | `--look <name>` | `SEKIEN_LOOK` | 描画スタイル |
+| `--block-id` | — | 各 SVG 出力の先頭にブロック ID (<!-- block: N -->) を付与 |
 
 CLI フラグが優先、未指定時は環境変数。
 

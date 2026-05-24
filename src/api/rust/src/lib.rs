@@ -136,7 +136,7 @@ pub enum BlockOutcome {
 /// フィールドが `None` の場合は mermaid.js のデフォルト値が使われる。
 #[derive(Clone, Default)]
 pub struct RenderConfig {
-    /// フォントファミリー。CSS の `font-family` 形式で指定する。
+    /// フォントファミリー。CSS の `font-family`形式で指定する。
     pub font_family: Option<String>,
     /// mermaid.js のテーマ。
     /// 指定できる値: `"default"` / `"base"` / `"dark"` / `"forest"` / `"neutral"` /
@@ -208,6 +208,8 @@ fn build_command(sekien: &OsStr, config: &RenderConfig) -> Command {
     if let Some(f) = &config.font_family { cmd.args(["--font", f]); }
     if let Some(t) = &config.theme       { cmd.args(["--theme", t]); }
     if let Some(l) = &config.look        { cmd.args(["--look", l]); }
+    // 成功と失敗を正確に入力順へ並べ戻すため、常にブロック ID を付与させる
+    cmd.arg("--block-id");
     cmd.stdin(Stdio::piped())
         .stdout(Stdio::piped())
         .stderr(Stdio::piped());
@@ -241,6 +243,31 @@ fn parse_stderr_failures(stderr: &str) -> HashMap<usize, String> {
             let msg = raw_msg.replace("]]]]><![CDATA[>", "]]>");
 
             Some((id, msg))
+        })
+        .collect()
+}
+
+/// sekien の stdout テキストから構造化レコードを抽出し、`{ N: SVG }` map にする。
+///
+/// 形式: `<!-- block: N -->\n<svg>...</svg>\n` (複数件は `\0` 区切り)
+/// 出力された SVG から `<!-- block: N -->` コメント行を除去して返す。
+fn parse_stdout_svgs(stdout: &str) -> HashMap<usize, String> {
+    stdout
+        .split('\0')
+        .filter(|chunk| !chunk.is_empty())
+        .filter_map(|chunk| {
+            let chunk = chunk.trim();
+
+            // ブロック番号をコメント行から抽出
+            let id_start = chunk.find("<!-- block: ")? + "<!-- block: ".len();
+            let id_end = chunk[id_start..].find(" -->")?;
+            let id: usize = chunk[id_start..id_start + id_end].parse().ok()?;
+
+            // SVG 本体 (コメント行以降) を抽出
+            let content_start = chunk[id_start + id_end..].find('\n')? + id_start + id_end + 1;
+            let svg = chunk[content_start..].trim().to_string();
+
+            Some((id, svg))
         })
         .collect()
 }
@@ -308,64 +335,35 @@ pub fn render_blocks(
         });
     }
 
-    // 成功した SVG: sekien は `\0` 区切りで成功 block のみを stdout に流す。
-    // 末尾には行儀の良い出力のために `\n` が付いているので trim する。
-    let success_svgs: Vec<String> = output
-        .stdout
-        .split(|&b| b == 0)
-        .filter(|s| !s.is_empty())
-        .map(|bytes| {
-            std::str::from_utf8(bytes).map(|s| s.trim().to_string())
-        })
-        .collect::<std::result::Result<Vec<_>, _>>()?;
+    let stdout_str = std::str::from_utf8(&output.stdout)?;
+    let success_svgs = parse_stdout_svgs(stdout_str);
 
     let stderr_str = std::str::from_utf8(&output.stderr)?;
     let failures = parse_stderr_failures(stderr_str);
 
-    build_outcomes(blocks.len(), success_svgs, &failures, stderr_str)
+    build_outcomes(blocks.len(), success_svgs, failures, stderr_str, stdout_str)
 }
 
 /// stdout 由来の SVG 列と stderr 由来の per-block 失敗 map を組み合わせて
-/// input blocks と 1:1 対応の `Vec<BlockOutcome>` を組み立てる。
-///
-/// 前段で 2 つの不整合を 1 度に判定する: ① すべての failure key が
-/// 1..=N の範囲内、かつ ② |SVG| + |failures| == N。これを満たさない場合は
-/// SVG の不足・余剰や out-of-range な block 番号いずれかが起きているので
-/// `ProtocolViolation` を返す。両者を 1 つの sum check に統合することで
-/// "fewer SVGs" と "more SVGs" の場合分けを書かずに済む。
-///
-/// `render_blocks` から実バイナリ依存を切り離して unit test できる pure 関数
-/// として独立させている (input/output の整合性は sekien バイナリと
-/// sekien-api の protocol contract そのもの)。
+/// input blocks と 1:1 対応의 `Vec<BlockOutcome>` を組み立てる。
 fn build_outcomes(
     block_count: usize,
-    success_svgs: Vec<String>,
-    failures: &HashMap<usize, String>,
+    success_svgs: HashMap<usize, String>,
+    failures: HashMap<usize, String>,
     stderr_for_error: &str,
+    stdout_for_error: &str,
 ) -> Result<Vec<BlockOutcome>> {
-    let valid = failures.keys().all(|&k| (1..=block_count).contains(&k))
-        && success_svgs.len() + failures.len() == block_count;
-    if !valid {
-        return Err(SekienApiError::ProtocolViolation(format!(
-            "sekien output does not match {block_count} input blocks: \
-             {} SVG(s) + {} failure(s) at {:?}. stderr was:\n{stderr_for_error}",
-            success_svgs.len(),
-            failures.len(),
-            {
-                let mut keys: Vec<&usize> = failures.keys().collect();
-                keys.sort();
-                keys
-            },
-        )));
-    }
-
-    let mut svg_iter = success_svgs.into_iter();
-    Ok((1..=block_count)
-        .map(|n| match failures.get(&n) {
-            Some(msg) => BlockOutcome::Failed(msg.clone()),
-            None      => BlockOutcome::Rendered(svg_iter.next().expect("counts validated above")),
+    (1..=block_count)
+        .map(|n| {
+            success_svgs.get(&n).map(|s| BlockOutcome::Rendered(s.clone()))
+                .or_else(|| failures.get(&n).map(|m| BlockOutcome::Failed(m.clone())))
         })
-        .collect())
+        .collect::<Option<Vec<_>>>()
+        .filter(|v| v.len() == success_svgs.len() + failures.len()) // 余剰データの混入がないか
+        .ok_or_else(|| SekienApiError::ProtocolViolation(format!(
+            "sekien output mismatch ({} SVGs, {} failures). \nstdout:\n{}\nstderr:\n{}",
+            success_svgs.len(), failures.len(), stdout_for_error, stderr_for_error
+        )))
 }
 
 #[cfg(test)]
@@ -424,7 +422,7 @@ mod tests {
     #[test]
     fn build_command_empty_config_has_no_arg_flags() {
         let cmd = build_command(OsStr::new("sekien"), &RenderConfig::default());
-        assert!(args_of(&cmd).is_empty(), "expected no args, got: {:?}", args_of(&cmd));
+        assert_eq!(args_of(&cmd), vec!["--block-id"]);
     }
 
     #[test]
@@ -433,7 +431,7 @@ mod tests {
             font_family: Some("Hiragino Sans".to_string()),
             ..Default::default()
         });
-        assert_eq!(args_of(&cmd), vec!["--font", "Hiragino Sans"]);
+        assert_eq!(args_of(&cmd), vec!["--font", "Hiragino Sans", "--block-id"]);
     }
 
     #[test]
@@ -445,7 +443,7 @@ mod tests {
         });
         assert_eq!(
             args_of(&cmd),
-            vec!["--font", "Arial", "--theme", "dark", "--look", "handDrawn"]
+            vec!["--font", "Arial", "--theme", "dark", "--look", "handDrawn", "--block-id"]
         );
     }
 
@@ -542,6 +540,23 @@ mod tests {
     }
 
     #[test]
+    fn parse_stdout_svgs_typical() {
+        let stdout = "<!-- block: 1 -->\n<svg1/>\n\0<!-- block: 2 -->\n<svg2/>\n";
+        let svgs = parse_stdout_svgs(stdout);
+        assert_eq!(svgs.len(), 2);
+        assert_eq!(svgs.get(&1).unwrap(), "<svg1/>");
+        assert_eq!(svgs.get(&2).unwrap(), "<svg2/>");
+    }
+
+    #[test]
+    fn parse_stdout_svgs_strips_comment_correctly() {
+        // コメント行の後の最初の \n 以降を取得し、trim する
+        let stdout = "<!-- block: 99 -->  \n   <svg>content</svg>   \n";
+        let svgs = parse_stdout_svgs(stdout);
+        assert_eq!(svgs.get(&99).unwrap(), "<svg>content</svg>");
+    }
+
+    #[test]
     fn parse_stderr_failures_extracts_block_numbers() {
         let stderr = "<!-- block: 1 -->\n<e><![CDATA[Lexical error on line 2]]></e>\n\0\
                       <!-- block: 3 -->\n<e><![CDATA[Parse error]]></e>\n";
@@ -580,8 +595,8 @@ mod tests {
 
     // ------ build_outcomes (両方向の数量・範囲 contract guard) ------
 
-    fn svgs(items: &[&str]) -> Vec<String> {
-        items.iter().map(|s| s.to_string()).collect()
+    fn svgs(items: &[(usize, &str)]) -> HashMap<usize, String> {
+        items.iter().map(|(n, m)| (*n, m.to_string())).collect()
     }
     fn failures(items: &[(usize, &str)]) -> HashMap<usize, String> {
         items.iter().map(|(n, m)| (*n, m.to_string())).collect()
@@ -589,7 +604,7 @@ mod tests {
 
     #[test]
     fn build_outcomes_all_rendered() {
-        let out = build_outcomes(3, svgs(&["a", "b", "c"]), &failures(&[]), "").unwrap();
+        let out = build_outcomes(3, svgs(&[(1, "a"), (2, "b"), (3, "c")]), failures(&[]), "", "").unwrap();
         assert_eq!(out, vec![
             BlockOutcome::Rendered("a".into()),
             BlockOutcome::Rendered("b".into()),
@@ -599,7 +614,7 @@ mod tests {
 
     #[test]
     fn build_outcomes_mixed_preserves_positions() {
-        let out = build_outcomes(3, svgs(&["a", "c"]), &failures(&[(2, "oops")]), "").unwrap();
+        let out = build_outcomes(3, svgs(&[(1, "a"), (3, "c")]), failures(&[(2, "oops")]), "", "").unwrap();
         assert_eq!(out, vec![
             BlockOutcome::Rendered("a".into()),
             BlockOutcome::Failed("oops".into()),
@@ -610,28 +625,26 @@ mod tests {
     #[test]
     fn build_outcomes_too_few_svgs_is_violation() {
         // 3 blocks 期待、SVG が 1 件不足 (failures 無し)
-        let err = build_outcomes(3, svgs(&["a", "b"]), &failures(&[]), "STDERR").unwrap_err();
+        let err = build_outcomes(3, svgs(&[(1, "a"), (2, "b")]), failures(&[]), "STDOUT", "STDERR").unwrap_err();
         assert!(matches!(err, SekienApiError::ProtocolViolation(_)), "got: {err:?}");
     }
 
     #[test]
     fn build_outcomes_too_many_svgs_is_violation() {
-        // 2 blocks 期待だが SVG が 3 件 (旧実装が silent に破棄していたケース)
-        let err = build_outcomes(2, svgs(&["a", "b", "c"]), &failures(&[]), "STDERR").unwrap_err();
+        // 2 blocks 期待だが SVG が 3 件
+        let err = build_outcomes(2, svgs(&[(1, "a"), (2, "b"), (3, "c")]), failures(&[]), "STDOUT", "STDERR").unwrap_err();
         assert!(matches!(err, SekienApiError::ProtocolViolation(_)), "got: {err:?}");
     }
 
     #[test]
     fn build_outcomes_out_of_range_failure_key_is_violation() {
-        // sum check だけだと擦り抜けるが、range check が捕まえる:
-        // failures = {99: msg}、SVG 2 件、block_count 3 → sum 3 で一致するが range NG
-        let err = build_outcomes(3, svgs(&["a", "b"]), &failures(&[(99, "x")]), "STDERR").unwrap_err();
+        let err = build_outcomes(3, svgs(&[(1, "a"), (2, "b")]), failures(&[(99, "x")]), "STDOUT", "STDERR").unwrap_err();
         assert!(matches!(err, SekienApiError::ProtocolViolation(_)), "got: {err:?}");
     }
 
     #[test]
     fn build_outcomes_empty_input() {
-        let out = build_outcomes(0, svgs(&[]), &failures(&[]), "").unwrap();
+        let out = build_outcomes(0, svgs(&[]), failures(&[]), "", "").unwrap();
         assert!(out.is_empty());
     }
 

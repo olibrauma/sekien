@@ -36,6 +36,7 @@ Options:
   --look <look>          Diagram look (classic | handDrawn | neo)
                          handDrawn is supported for flowchart/graph only.
                          Also configurable via SEKIEN_LOOK env var.
+  --block-id             Prepend an XML comment with the block ID to each SVG output
   --version, -v          Show version
   --help, -h             Show this help
 
@@ -48,6 +49,7 @@ struct Options {
     font_family: Option<String>,
     theme: Option<String>,
     look: Option<String>,
+    show_block_ids: bool,
 }
 
 enum Command {
@@ -73,6 +75,9 @@ fn parse_args(raw: Vec<String>) -> Result<(Options, Command)> {
             }
             "--look" => {
                 options.look = Some(iter.next().context("--look requires a value")?);
+            }
+            "--block-id" => {
+                options.show_block_ids = true;
             }
             _ if arg.starts_with('-') => {
                 bail!("unknown option: {arg}");
@@ -110,6 +115,7 @@ fn main() -> Result<()> {
         font_family: options.font_family.or_else(|| env::var("SEKIEN_FONT").ok()),
         theme:       options.theme      .or_else(|| env::var("SEKIEN_THEME").ok()),
         look:        options.look       .or_else(|| env::var("SEKIEN_LOOK").ok()),
+        show_block_ids: options.show_block_ids,
     };
 
     match command {

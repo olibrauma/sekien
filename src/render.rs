@@ -52,6 +52,7 @@ pub struct RenderConfig {
     pub font_family: Option<String>,
     pub theme: Option<String>,
     pub look: Option<String>,
+    pub show_block_ids: bool,
 }
 
 /// event loop で扱う user event。reader thread (Block / InputEnd / InputError)
@@ -258,10 +259,12 @@ struct StreamState {
     wrote_any_error: bool,
     /// webview の ready 状態と render 中 block の有無
     pipeline: Pipeline,
+    /// レンダリング設定
+    config: RenderConfig,
 }
 
 impl StreamState {
-    fn new() -> Self {
+    fn new(config: RenderConfig) -> Self {
         Self {
             next_index: 1,
             queue: VecDeque::new(),
@@ -269,6 +272,7 @@ impl StreamState {
             wrote_any_svg: false,
             wrote_any_error: false,
             pipeline: Pipeline::NotReady,
+            config,
         }
     }
 
@@ -329,9 +333,14 @@ impl StreamState {
                 }
                 // SVG レコード末尾に \n を付けて行儀の良い出力にする。
                 // 複数レコード間は \0 で区切る (2 件目以降の直前に \0 を挿入)。
-                let mut svg_with_newline = svg;
-                svg_with_newline.push('\n');
-                write_to_stdout(&svg_with_newline, self.wrote_any_svg)
+                let mut output = String::new();
+                if self.config.show_block_ids {
+                    output.push_str(&format!("<!-- block: {id} -->\n"));
+                }
+                output.push_str(&svg);
+                output.push('\n');
+
+                write_to_stdout(&output, self.wrote_any_svg)
                     .map_err(|e| format!("failed to write SVG to stdout: {e}"))?;
                 self.wrote_any_svg = true;
                 self.pipeline = Pipeline::Idle;
@@ -423,7 +432,7 @@ pub fn run_stream<R: Read + Send + 'static>(reader: R, config: &RenderConfig) ->
     let webview = create_webview(&window, build_html(config), proxy)
         .unwrap_or_else(|e| exit_fatal(&e));
 
-    let mut state = StreamState::new();
+    let mut state = StreamState::new(config.clone());
     event_loop.run(move |event, _event_loop, control_flow| {
         *control_flow = ControlFlow::Wait;
         let _keep_window_alive = &window;
