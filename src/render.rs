@@ -331,11 +331,10 @@ impl StreamState {
                         self.pipeline
                     )));
                 }
-                // SVG レコード末尾に \n を付けて行儀の良い出力にする。
                 // 複数レコード間は \0 で区切る (2 件目以降の直前に \0 を挿入)。
                 let mut output = String::new();
                 if self.config.show_block_ids {
-                    output.push_str(&format!("<!-- block: {id} -->\n"));
+                    output.push_str(&format_block_comment(id));
                 }
                 output.push_str(&svg);
                 output.push('\n');
@@ -353,14 +352,16 @@ impl StreamState {
                         self.pipeline
                     )));
                 }
-                // stderr への出力を構造化 XML 形式にする。
-                // <!-- block: N -->\n<e><![CDATA[ message ]]></e>\n
+                // stderr への出力を構造化形式にする。
+                // <!-- <block id="N"/> -->\n<e><![CDATA[\n message \n]]></e>\n
                 // 複数レコード間は \0 で区切る。
                 let escaped = error.replace("]]>", "]]]]><![CDATA[>");
-                let xml = format!(
-                    "<!-- block: {id} -->\n<e><![CDATA[{escaped}]]></e>\n"
+                let msg = format!(
+                    "{}<e><![CDATA[\n{}\n]]></e>\n",
+                    format_block_comment(id),
+                    escaped
                 );
-                write_to_stderr(&xml, self.wrote_any_error)
+                write_to_stderr(&msg, self.wrote_any_error)
                     .map_err(|e| format!("failed to write error to stderr: {e}"))?;
                 self.wrote_any_error = true;
                 self.pipeline = Pipeline::Idle;
@@ -368,6 +369,10 @@ impl StreamState {
             }
         }
     }
+}
+
+fn format_block_comment(id: usize) -> String {
+    format!("<!-- <block id=\"{id}\"/> -->\n")
 }
 
 fn dispatch_render(id: usize, content: &str, wv: &WebView) -> Result<(), String> {

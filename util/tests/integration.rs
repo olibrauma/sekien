@@ -143,11 +143,11 @@ fn invalid_mermaid_emits_stderr_line_and_exits_zero() {
     assert!(out.status.success(), "expected exit 0, got {:?}", out.status);
     let stderr = String::from_utf8_lossy(&out.stderr);
     assert!(
-        stderr.contains("<!-- block: 1 -->"),
+        stderr.contains("<!-- <block id=\"1\"/> -->"),
         "stderr missing XML comment for block 1: {stderr}"
     );
     assert!(
-        stderr.contains("<e><![CDATA[No diagram type detected"),
+        stderr.contains("<e><![CDATA[\nNo diagram type detected"),
         "stderr missing structured error message: {stderr}"
     );
 }
@@ -242,7 +242,7 @@ fn continue_on_error_three_blocks_middle_fails() {
     assert_eq!(nul_count, 1, "expected 1 NUL separator, got {nul_count}");
     let stderr = String::from_utf8_lossy(&out.stderr);
     assert!(
-        stderr.contains("<!-- block: 2 -->"),
+        stderr.contains("<!-- <block id=\"2\"/> -->"),
         "stderr missing XML comment for block 2: {stderr}"
     );
 }
@@ -258,7 +258,7 @@ fn all_blocks_fail_yields_empty_stdout_and_three_stderr_lines() {
         out.stdout.len()
     );
     let stderr = String::from_utf8_lossy(&out.stderr);
-    let count = count_subseq(&out.stderr, b"<!-- block:");
+    let count = count_subseq(&out.stderr, b"<!-- <block id=");
     assert_eq!(count, 3, "expected 3 error blocks, got {count} in: {stderr}");
 }
 

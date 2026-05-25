@@ -216,31 +216,37 @@ fn build_command(sekien: &OsStr, config: &RenderConfig) -> Command {
     cmd
 }
 
+/// チャンクを XML としてパースし、(ブロックID, ルート要素の文字列範囲) を抽出する。
+fn extract_meta_and_body(chunk: &str) -> Option<(usize, &str)> {
+    let doc = roxmltree::Document::parse(chunk.trim()).ok()?;
+
+    // ルートの子ノードから最初のコメントを探し、その内部の XML から ID を抽出
+    let meta_comment = doc.root().children().find(|n| n.is_comment())?;
+    let meta_doc = roxmltree::Document::parse(meta_comment.text()?.trim()).ok()?;
+    let id: usize = meta_doc.root_element().attribute("id")?.parse().ok()?;
+
+    // ルート要素 (svg または e) の範囲を元の文字列から切り出す
+    let body = &chunk.trim()[doc.root_element().range()];
+
+    Some((id, body))
+}
+
 /// sekien の stderr テキストから構造化 XML レコードを抽出し、`{ N: msg }` map にする。
 ///
-/// 形式: `<!-- block: N -->\n<e><![CDATA[ message ]]></e>\n` (複数件は `\0` 区切り)
+/// 形式: `<!-- <block id="N"/> -->\n<e><![CDATA[\n message \n]]></e>\n` (複数件は `\0` 区切り)
 /// メッセージ内の `]]>` は `]]]]><![CDATA[>` にエスケープされているため、パース時に戻す。
 fn parse_stderr_failures(stderr: &str) -> HashMap<usize, String> {
     stderr
         .split('\0')
         .filter(|chunk| !chunk.is_empty())
         .filter_map(|chunk| {
-            let chunk = chunk.trim();
+            let (id, body_xml) = extract_meta_and_body(chunk)?;
 
-            // ブロック番号をコメント行から抽出
-            let id_start = chunk.find("<!-- block: ")? + "<!-- block: ".len();
-            let id_end = chunk[id_start..].find(" -->")?;
-            let id: usize = chunk[id_start..id_start + id_end].parse().ok()?;
-
-            // CDATA セクション内のメッセージを抽出
-            let cdata_prefix = "<![CDATA[";
-            let cdata_suffix = "]]>";
-            let msg_start = chunk.find(cdata_prefix)? + cdata_prefix.len();
-            let msg_end = chunk.rfind(cdata_suffix)?;
-            let raw_msg = &chunk[msg_start..msg_end];
-
-            // エスケープを解除: ]]]]> <![CDATA[ > -> ]]>
-            let msg = raw_msg.replace("]]]]><![CDATA[>", "]]>");
+            // XML パーサで CDATA 部分の生テキストを取得。
+            // 前後の改行 (可読性のために付与されている) を trim する。
+            // パーサが分割された CDATA を自動結合するため、手動の unescape は不要。
+            let doc = roxmltree::Document::parse(body_xml).ok()?;
+            let msg = doc.root_element().text()?.trim().to_string();
 
             Some((id, msg))
         })
@@ -249,25 +255,15 @@ fn parse_stderr_failures(stderr: &str) -> HashMap<usize, String> {
 
 /// sekien の stdout テキストから構造化レコードを抽出し、`{ N: SVG }` map にする。
 ///
-/// 形式: `<!-- block: N -->\n<svg>...</svg>\n` (複数件は `\0` 区切り)
-/// 出力された SVG から `<!-- block: N -->` コメント行を除去して返す。
+/// 形式: `<!-- <block id="N"/> -->\n<svg>...</svg>\n` (複数件は `\0` 区切り)
+/// 出力された SVG から `<!-- <block id="N"/> -->` コメント行を除去して返す。
 fn parse_stdout_svgs(stdout: &str) -> HashMap<usize, String> {
     stdout
         .split('\0')
         .filter(|chunk| !chunk.is_empty())
         .filter_map(|chunk| {
-            let chunk = chunk.trim();
-
-            // ブロック番号をコメント行から抽出
-            let id_start = chunk.find("<!-- block: ")? + "<!-- block: ".len();
-            let id_end = chunk[id_start..].find(" -->")?;
-            let id: usize = chunk[id_start..id_start + id_end].parse().ok()?;
-
-            // SVG 本体 (コメント行以降) を抽出
-            let content_start = chunk[id_start + id_end..].find('\n')? + id_start + id_end + 1;
-            let svg = chunk[content_start..].trim().to_string();
-
-            Some((id, svg))
+            let (id, svg) = extract_meta_and_body(chunk)?;
+            Some((id, svg.to_string()))
         })
         .collect()
 }
@@ -541,7 +537,7 @@ mod tests {
 
     #[test]
     fn parse_stdout_svgs_typical() {
-        let stdout = "<!-- block: 1 -->\n<svg1/>\n\0<!-- block: 2 -->\n<svg2/>\n";
+        let stdout = "<!-- <block id=\"1\"/> -->\n<svg1/>\n\0<!-- <block id=\"2\"/> -->\n<svg2/>\n";
         let svgs = parse_stdout_svgs(stdout);
         assert_eq!(svgs.len(), 2);
         assert_eq!(svgs.get(&1).unwrap(), "<svg1/>");
@@ -551,15 +547,15 @@ mod tests {
     #[test]
     fn parse_stdout_svgs_strips_comment_correctly() {
         // コメント行の後の最初の \n 以降を取得し、trim する
-        let stdout = "<!-- block: 99 -->  \n   <svg>content</svg>   \n";
+        let stdout = "<!-- <block id=\"99\"/> -->  \n   <svg>content</svg>   \n";
         let svgs = parse_stdout_svgs(stdout);
         assert_eq!(svgs.get(&99).unwrap(), "<svg>content</svg>");
     }
 
     #[test]
     fn parse_stderr_failures_extracts_block_numbers() {
-        let stderr = "<!-- block: 1 -->\n<e><![CDATA[Lexical error on line 2]]></e>\n\0\
-                      <!-- block: 3 -->\n<e><![CDATA[Parse error]]></e>\n";
+        let stderr = "<!-- <block id=\"1\"/> -->\n<e><![CDATA[\nLexical error on line 2\n]]></e>\n\0\
+                      <!-- <block id=\"3\"/> -->\n<e><![CDATA[\nParse error\n]]></e>\n";
         let failures = parse_stderr_failures(stderr);
         assert_eq!(failures.len(), 2);
         assert_eq!(failures.get(&1).unwrap(), "Lexical error on line 2");
@@ -568,7 +564,7 @@ mod tests {
 
     #[test]
     fn parse_stderr_failures_unescapes_cdata_end() {
-        let stderr = "<!-- block: 1 -->\n<e><![CDATA[Error at ]]]]><![CDATA[> line 1]]></e>\n";
+        let stderr = "<!-- <block id=\"1\"/> -->\n<e><![CDATA[\nError at ]]]]><![CDATA[> line 1\n]]></e>\n";
         let failures = parse_stderr_failures(stderr);
         assert_eq!(failures.get(&1).unwrap(), "Error at ]]> line 1");
     }
@@ -582,13 +578,13 @@ mod tests {
     fn parse_stderr_failures_ignores_malformed_xml() {
         let stderr = "Warning: foo\n\
                       Error: not from sekien\n\
-                      <!-- block: abc -->\n<e>invalid</e>\n";
+                      <!-- <invalid/> -->\n<e>invalid</e>\n";
         assert!(parse_stderr_failures(stderr).is_empty());
     }
 
     #[test]
     fn parse_stderr_failures_handles_colon_in_message() {
-        let stderr = "<!-- block: 2 -->\n<e><![CDATA[Parse error: unexpected token]]></e>\n";
+        let stderr = "<!-- <block id=\"2\"/> -->\n<e><![CDATA[\nParse error: unexpected token\n]]></e>\n";
         let failures = parse_stderr_failures(stderr);
         assert_eq!(failures.get(&2).unwrap(), "Parse error: unexpected token");
     }
