@@ -29,7 +29,7 @@
 use anyhow::Result;
 use serde::Deserialize;
 use std::collections::VecDeque;
-use std::io::{self, Read, Write};
+use std::io::{self, BufRead, BufReader, Read, Write};
 use wry::{WebView, WebViewBuilder};
 use tao::{
     event::{Event, WindowEvent},
@@ -168,36 +168,18 @@ fn emit_block<F: FnMut(LoopEvent)>(buf: &mut Vec<u8>, on_event: &mut F) -> bool 
 /// 余分な空 block にしないため)。最後に必ず `InputEnd` を 1 回 emit する。
 /// I/O または UTF-8 エラーは `InputError` を emit して即 return する
 /// (`InputEnd` は emit されない)。
-fn read_blocks<R: Read>(mut reader: R, mut on_event: impl FnMut(LoopEvent)) {
+fn read_blocks<R: Read>(reader: R, mut on_event: impl FnMut(LoopEvent)) {
+    let mut reader = BufReader::new(reader);
     let mut buf: Vec<u8> = Vec::new();
-    let mut chunk = [0u8; 8192];
     loop {
-        match reader.read(&mut chunk) {
-            Ok(0) => {
-                // EOF 到着。バッファに残っているデータがあれば最後のブロックとして emit する。
-                // ただし、末尾の改行やスペースのみのデータは、対話モード等での意図しない
-                // 空ブロック生成を防ぐため無視する。
-                if !buf.is_empty() {
-                    let s = String::from_utf8_lossy(&buf);
-                    if !s.trim().is_empty() {
-                        if !emit_block(&mut buf, &mut on_event) {
-                            return;
-                        }
-                    }
-                }
-                on_event(LoopEvent::InputEnd);
-                return;
-            }
-            Ok(n) => {
-                for &b in &chunk[..n] {
-                    if b == 0 {
-                        if !emit_block(&mut buf, &mut on_event) {
-                            return;
-                        }
-                    } else {
-                        buf.push(b);
-                    }
-                }
+        match reader.read_until(0, &mut buf) {
+            Ok(0) => break,
+            Ok(_) => {
+                let is_nul = buf.last() == Some(&0);
+                if is_nul { buf.pop(); }
+                if (is_nul || !String::from_utf8_lossy(&buf).trim().is_empty())
+                    && !emit_block(&mut buf, &mut on_event) { return; }
+                buf.clear();
             }
             Err(e) => {
                 on_event(LoopEvent::InputError(format!("failed to read input: {e}")));
@@ -205,6 +187,7 @@ fn read_blocks<R: Read>(mut reader: R, mut on_event: impl FnMut(LoopEvent)) {
             }
         }
     }
+    on_event(LoopEvent::InputEnd);
 }
 
 fn spawn_input_reader<R: Read + Send + 'static>(
