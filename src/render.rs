@@ -427,15 +427,16 @@ pub fn run_stream<R: Read + Send + 'static>(reader: R, config: &RenderConfig) ->
 
     let event_loop = EventLoopBuilder::<LoopEvent>::with_user_event().build();
     let proxy = event_loop.create_proxy();
-    spawn_input_reader(reader, proxy.clone());
 
-    // window と webview を event_loop.run の前で構築する (wry/tao の慣用パターン)。
-    // reader thread が proxy 経由で送る UserEvent は tao の内部 queue に保持されて
-    // run 開始後に配信されるため、ここで構築中に Block が失われることはない。
-    // window は WebView の OS リソース親なので closure 内で drop guard として保持する。
+    // WebView の早期初期化 (Pre-warming):
+    // 読み取りスレッドの開始やデータの到着を待たずに、メインスレッドで WebView の
+    // 構築と HTML 読み込みを開始する。これにより 1 ブロック目のレンダリング開始
+    // までのレイテンシを最小化する。
     let window = create_window(&event_loop).unwrap_or_else(|e| exit_fatal(&e));
-    let webview = create_webview(&window, build_html(config), proxy)
+    let webview = create_webview(&window, build_html(config), proxy.clone())
         .unwrap_or_else(|e| exit_fatal(&e));
+
+    spawn_input_reader(reader, proxy);
 
     let mut state = StreamState::new(config.clone());
     event_loop.run(move |event, _event_loop, control_flow| {
