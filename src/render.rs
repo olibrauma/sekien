@@ -26,7 +26,7 @@
 //! EOF を受け取り全 pending を消化したら exit 0。sekien 自身の失敗
 //! (display 初期化、IPC malformed、stdout 書き込み失敗等) のみ exit 1。
 
-use anyhow::Result;
+use anyhow::{Context, Result};
 use serde::Deserialize;
 use std::collections::VecDeque;
 use std::io::{self, BufRead, BufReader, Read, Write};
@@ -112,7 +112,7 @@ fn build_html(config: &RenderConfig) -> String {
         .replace("{{EXTRA_CONFIG}}", &extra_config)
 }
 
-fn create_window(event_loop: &EventLoopWindowTarget<LoopEvent>) -> Result<Window, String> {
+fn create_window(event_loop: &EventLoopWindowTarget<LoopEvent>) -> anyhow::Result<Window> {
     // macOS/Windows は実画面に出るので画面外配置で隠す。Linux は Xvfb 内で
     // 完結するので位置は問題にならないが、1x1 だと GDK アサーションが出る
     // ため 100x100 に拡大する。
@@ -127,7 +127,7 @@ fn create_window(event_loop: &EventLoopWindowTarget<LoopEvent>) -> Result<Window
     let builder = builder.with_position(tao::dpi::LogicalPosition::new(-10000, -10000));
     let window = builder
         .build(event_loop)
-        .map_err(|e| format!("failed to create window: {e}"))?;
+        .map_err(|e| anyhow::anyhow!("failed to create window: {e}"))?;
     #[cfg(not(target_os = "linux"))]
     window.set_outer_position(tao::dpi::LogicalPosition::new(-10000, -10000));
     Ok(window)
@@ -137,7 +137,7 @@ fn create_webview(
     window: &Window,
     html: String,
     proxy: EventLoopProxy<LoopEvent>,
-) -> Result<WebView, String> {
+) -> anyhow::Result<WebView> {
     WebViewBuilder::new()
         .with_background_color((0, 0, 0, 0))
         .with_transparent(true)
@@ -146,7 +146,7 @@ fn create_webview(
             let _ = proxy.send_event(LoopEvent::Ipc(req.into_body()));
         })
         .build(window)
-        .map_err(|e| format!("failed to create webview: {e}"))
+        .map_err(|e| anyhow::anyhow!("failed to create webview: {e}"))
 }
 
 /// `buf` を 1 つの `Block` として emit する。UTF-8 invalid なら `InputError` を
@@ -215,8 +215,8 @@ enum Pipeline {
     Awaiting(usize),
 }
 
-/// event 処理 1 件分の継続判断。`Err(msg)` は致命的失敗。
-type StepResult = Result<Continuation, String>;
+/// event 処理 1 件分の継続判断。`Err` は致命的失敗。
+type StepResult = anyhow::Result<Continuation>;
 
 #[derive(Debug, PartialEq, Eq)]
 enum Continuation {
@@ -278,7 +278,7 @@ impl StreamState {
                 self.end_received = true;
                 self.try_dispatch_next(wv)
             }
-            LoopEvent::InputError(e) => Err(e),
+            LoopEvent::InputError(e) => Err(anyhow::anyhow!(e)),
             LoopEvent::Ipc(msg) => self.on_ipc(&msg, wv),
         }
     }
@@ -323,7 +323,7 @@ impl StreamState {
                 output.push('\n');
 
                 write_to_stdout(&output, self.wrote_any_svg)
-                    .map_err(|e| format!("failed to write SVG to stdout: {e}"))?;
+                    .context("failed to write SVG to stdout")?;
                 self.wrote_any_svg = true;
                 self.pipeline = Pipeline::Idle;
                 self.try_dispatch_next(wv)
@@ -345,7 +345,7 @@ impl StreamState {
                     escaped
                 );
                 write_to_stderr(&msg, self.wrote_any_error)
-                    .map_err(|e| format!("failed to write error to stderr: {e}"))?;
+                    .context("failed to write error to stderr")?;
                 self.wrote_any_error = true;
                 self.pipeline = Pipeline::Idle;
                 self.try_dispatch_next(wv)
@@ -358,7 +358,7 @@ fn format_block_comment(id: usize) -> String {
     format!("<!-- <block id=\"{id}\"/> -->\n")
 }
 
-fn dispatch_render(id: usize, content: &str, wv: &WebView) -> Result<(), String> {
+fn dispatch_render(id: usize, content: &str, wv: &WebView) -> anyhow::Result<()> {
     // serde_json の string 出力は valid な JS 文字列リテラルとしてそのまま使える
     // (`"` / `\` / 制御文字 / U+2028,U+2029 を escape)。`evaluate_script` は HTML
     // parser を介さないので `</script>` の追加 escape は不要 (HTML 埋め込み経路の
@@ -366,7 +366,7 @@ fn dispatch_render(id: usize, content: &str, wv: &WebView) -> Result<(), String>
     let content_literal = serde_json::to_string(content).expect("serialize Mermaid block content");
     let js = format!("renderMermaid({id}, {content_literal})");
     wv.evaluate_script(&js)
-        .map_err(|e| format!("failed to dispatch render({id}) to webview: {e}"))
+        .map_err(|e| anyhow::anyhow!("failed to dispatch render({id}) to webview: {e}"))
 }
 
 fn write_to_stdout(content: &str, write_separator: bool) -> io::Result<()> {
@@ -394,8 +394,8 @@ fn write_to_stderr(content: &str, write_separator: bool) -> io::Result<()> {
 /// バグまたは wry の互換性破壊。silent に exit 0 すると "空の SVG が出た"
 /// という形でユーザーに見えて debug 困難になるため、`Err` で持ち上げて
 /// caller に exit 1 させる (`run_stream` の closure 末端 1 箇所で処理)。
-fn ipc_protocol_error(detail: &str) -> String {
-    format!("malformed IPC from webview: {detail}")
+fn ipc_protocol_error(detail: &str) -> anyhow::Error {
+    anyhow::anyhow!("malformed IPC from webview: {detail}")
 }
 
 /// 入力 stream を取り、EOF まで streaming で Mermaid → SVG 変換を行う。
@@ -415,9 +415,9 @@ pub fn run_stream<R: Read + Send + 'static>(reader: R, config: &RenderConfig) ->
     // 読み取りスレッドの開始やデータの到着を待たずに、メインスレッドで WebView の
     // 構築と HTML 読み込みを開始する。これにより 1 ブロック目のレンダリング開始
     // までのレイテンシを最小化する。
-    let window = create_window(&event_loop).unwrap_or_else(|e| exit_fatal(&e));
+    let window = create_window(&event_loop).unwrap_or_else(|e| exit_fatal(e));
     let webview = create_webview(&window, build_html(config), proxy.clone())
-        .unwrap_or_else(|e| exit_fatal(&e));
+        .unwrap_or_else(|e| exit_fatal(e));
 
     spawn_input_reader(reader, proxy);
 
@@ -441,14 +441,14 @@ fn dispatch_or_exit(result: StepResult) {
     match result {
         Ok(Continuation::Continue) => {}
         Ok(Continuation::Done) => std::process::exit(0),
-        Err(msg) => exit_fatal(&msg),
+        Err(e) => exit_fatal(e),
     }
 }
 
 /// sekien 自身の致命的失敗時の唯一の exit(1) 経路。
 /// `run_stream` の event loop closure 末端からだけ呼ばれる。
-fn exit_fatal(msg: &str) -> ! {
-    eprintln!("Error: {msg}");
+fn exit_fatal(e: anyhow::Error) -> ! {
+    eprintln!("Error: {e:?}");
     std::process::exit(1);
 }
 
