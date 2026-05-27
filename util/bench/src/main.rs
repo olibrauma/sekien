@@ -135,7 +135,14 @@ fn get_process_group_rss(root_pid: u32) -> u64 {
     total
 }
 
-fn measure_one_run(cmd: &mut Command) -> (Duration, u64) {
+#[derive(Clone, Copy)]
+enum MeasureMode {
+    TimeOnly,
+    RssOnly,
+}
+
+/// child を 1 回起動し、指定されたモードで計測を行う。
+fn measure_one_run(cmd: &mut Command, mode: MeasureMode) -> u64 {
     let start = Instant::now();
     let mut child = cmd
         .stdout(Stdio::null())
@@ -145,47 +152,57 @@ fn measure_one_run(cmd: &mut Command) -> (Duration, u64) {
     let pid = child.id();
 
     let (stop_tx, stop_rx) = mpsc::channel::<()>();
-    let sampler = thread::spawn(move || {
-        let mut max_rss = 0u64;
-        loop {
-            max_rss = max_rss.max(get_process_group_rss(pid));
-            if stop_rx.recv_timeout(SAMPLE_INTERVAL).is_ok() {
-                break;
+    let sampler = if matches!(mode, MeasureMode::RssOnly) {
+        Some(thread::spawn(move || {
+            let mut max_rss = 0u64;
+            loop {
+                max_rss = max_rss.max(get_process_group_rss(pid));
+                if stop_rx.recv_timeout(SAMPLE_INTERVAL).is_ok() {
+                    break;
+                }
             }
-        }
-        max_rss
-    });
+            max_rss
+        }))
+    } else {
+        None
+    };
 
     let _ = child.wait();
     let duration = start.elapsed();
     let _ = stop_tx.send(());
-    let max_rss_bytes = sampler.join().unwrap_or(0);
-    (duration, max_rss_bytes)
+
+    match mode {
+        MeasureMode::TimeOnly => duration.as_nanos() as u64,
+        MeasureMode::RssOnly => sampler.and_then(|s| s.join().ok()).unwrap_or(0),
+    }
 }
 
 fn bench_target<F: Fn() -> Command>(label: &str, build_cmd: F) -> BenchResult {
     eprint!("    {label}: warmup");
     for _ in 0..WARMUP {
-        let _ = measure_one_run(&mut build_cmd());
+        let _ = measure_one_run(&mut build_cmd(), MeasureMode::TimeOnly);
         eprint!(".");
     }
-    eprint!(" runs");
-    let (durations, rsses): (Vec<Duration>, Vec<u64>) = (0..RUNS).map(|_| {
-        let result = measure_one_run(&mut build_cmd());
+    
+    eprint!(" time_runs");
+    let durations: Vec<u64> = (0..RUNS).map(|_| {
+        let res = measure_one_run(&mut build_cmd(), MeasureMode::TimeOnly);
         eprint!(".");
-        result
-    }).unzip();
+        res
+    }).collect();
+
+    eprint!(" rss_runs");
+    let rsses: Vec<u64> = (0..RUNS).map(|_| {
+        let res = measure_one_run(&mut build_cmd(), MeasureMode::RssOnly);
+        eprint!(".");
+        res
+    }).collect();
+    
     eprintln!();
     BenchResult {
-        median_duration: median_duration(&durations),
+        median_duration: Duration::from_nanos(median_u64(&durations)),
         median_rss_bytes: median_u64(&rsses),
     }
-}
-
-fn median_duration(samples: &[Duration]) -> Duration {
-    let mut sorted: Vec<u128> = samples.iter().map(|d| d.as_nanos()).collect();
-    sorted.sort();
-    Duration::from_nanos(sorted[sorted.len() / 2] as u64)
 }
 
 fn median_u64(samples: &[u64]) -> u64 {
