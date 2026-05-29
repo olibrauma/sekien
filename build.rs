@@ -3,17 +3,17 @@ use std::env;
 use std::fs;
 use std::path::PathBuf;
 
-/// `src/assets/mermaid.min.js` の期待される SHA256 ハッシュ値。
+/// `assets/mermaid.min.js` の期待される SHA256 ハッシュ値。
 /// 手動更新時に改ざんや事故を防ぐための完全性検証。
 const EXPECTED_MERMAID_SHA: &str =
     "217b66ef4279c33c141b4afe22effad10a91c02558dc70917be2c0981e78ed87";
 
 fn main() {
     let manifest_dir = env::var("CARGO_MANIFEST_DIR").expect("CARGO_MANIFEST_DIR");
-    let mermaid_path = PathBuf::from(&manifest_dir).join("src/assets/mermaid.min.js");
+    let mermaid_path = PathBuf::from(&manifest_dir).join("assets/mermaid.min.js");
 
-    println!("cargo:rerun-if-changed=src/assets/mermaid.min.js");
-    println!("cargo:rerun-if-changed=src/assets/render.html");
+    println!("cargo:rerun-if-changed=assets/mermaid.min.js");
+    println!("cargo:rerun-if-changed=assets/render.html");
     println!("cargo:rerun-if-changed=build.rs");
 
     let bytes = fs::read(&mermaid_path).unwrap_or_else(|e| panic!("read {mermaid_path:?}: {e}"));
@@ -23,7 +23,7 @@ fn main() {
     if actual_sha != EXPECTED_MERMAID_SHA {
         panic!(
             "\n\n\
-            [INTEGRITY ERROR] src/assets/mermaid.min.js does not match the expected SHA256 hash!\n\
+            [INTEGRITY ERROR] assets/mermaid.min.js does not match the expected SHA256 hash!\n\
             Expected: {EXPECTED_MERMAID_SHA}\n\
             Actual:   {actual_sha}\n\n\
             If you intended to update mermaid.min.js, please update EXPECTED_MERMAID_SHA in build.rs.\n\n"

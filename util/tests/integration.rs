@@ -84,10 +84,6 @@ fn count_subseq(haystack: &[u8], needle: &[u8]) -> usize {
     count
 }
 
-fn find_subseq(haystack: &[u8], needle: &[u8]) -> Option<usize> {
-    haystack.windows(needle.len()).position(|w| w == needle)
-}
-
 fn assert_has_svg(stdout: &[u8]) {
     assert!(
         count_subseq(stdout, b"<svg") > 0,

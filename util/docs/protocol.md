@@ -19,7 +19,7 @@ stderr_unit   ::= [ json_meta ] error_message "\n"
 
 (* メタデータ定義: JSON オブジェクトを XML コメント形式でラップし、改行で終端 *)
 json_meta     ::= "<!-- " json_object " -->\n"
-json_object   ::= (* RFC 8259 に準拠した JSON オブジェクト。現在は {"id": number} 形式 *)
+json_object   ::= ? JSON object (RFC 8259) ?
 
 (* コンテンツ定義: separator (\0) を含まない任意の UTF-8 文字列 *)
 mermaid_text  ::= { character - separator }
@@ -30,7 +30,17 @@ error_message ::= { character - separator }
 character     ::= ? any UTF-8 character ?
 ```
 
-## 2. 通信の性質
+## 2. メタデータのデータ構造 (json_object)
+
+`json_meta` に埋め込まれる `json_object` は、現在は以下の構造を持つ。
+
+*   **id** (number): 入力順に基づく 1-origin のブロック番号。
+
+例: `{"id": 1}`
+
+将来的に、レンダリング日時や mermaid.js の詳細なバージョン情報などが追加される可能性がある。
+
+## 3. 通信の性質
 
 1.  **逐次処理（Streaming）**:
     `sekien` は `stdin` から `separator` を受け取るまで入力を読み込み、1 ブロック完成するごとに即座にレンダリングを開始する。結果が準備でき次第、`stdout` または `stderr` に出力する。

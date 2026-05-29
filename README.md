@@ -9,7 +9,6 @@ Mermaid 公式の [`mmdc`](https://github.com/mermaid-js/mermaid-cli) に比べ�
 OS ネイティブの WebView を活用することで、標準的な `mmdc` (Puppeteer/Chromium ベース) に比べ圧倒的に軽量・高速に動作します。
 
 いずれの環境でも実行速度・メモリ使用量ともに優位なのは、重量級の Chromium をバンドルせず、OS 標準の描画エンジンをダイレクトに叩くためです。
-また、Pandoc 連携用の専用フィルタ ([`sekien-pandoc`](../2026-05-20-sekien-pandoc)) を同梱しており、別途 `mermaid-filter` 等を導入する必要もありません。
 
 - `util/bench/` の 3 図の中央値。 mmdc は 11.12.0
 - 計測環境: macOS (arm64)、sekien 0.1.0 (mermaid.js 11.14.0)
@@ -25,28 +24,12 @@ OS ネイティブの WebView を活用することで、標準的な `mmdc` (Pu
 
 ### 実行速度
 
-```mermaid
-xychart-beta
-    title "Execution Time (Lower is better)"
-    x-axis ["Mac (sekien)", "Mac (mmdc)", "Linux (sekien)", "Linux (mmdc)"]
-    y-axis "Time (ms)" 0 --> 1250
-    bar [360, 1100, 800, 1100]
-```
-
 | platform | sekien | mmdc | Advantage |
 |---|---|---|---|
 | Mac | **~360 ms** | ~1.1 s | **67% 速い** |
 | Linux | **~800 ms** | ~1.1 s | **27% 速い** |
 
 ### メモリ使用量
-
-```mermaid
-xychart-beta
-    title "Memory Usage (Lower is better)"
-    x-axis ["Mac (sekien)", "Mac (mmdc)", "Linux (sekien)", "Linux (mmdc)"]
-    y-axis "RSS (MB)" 0 --> 750
-    bar [90, 690, 440, 630]
-```
 
 | platform | sekien | mmdc | Advantage |
 |---|---|---|---|
@@ -58,6 +41,9 @@ xychart-beta
 ```bash
 cargo install sekien
 ```
+
+Linux の場合はビルドに WebKitGTK 関連のパッケージが必要です（Ubuntu 例）:
+`sudo apt install libwebkit2gtk-4.1-dev libgtk-3-dev`
 
 ## 使い方
 
@@ -74,8 +60,7 @@ printf 'graph LR\n  A --> B\0graph TD\n  X --> Y' | sekien > out.bin
 
 sekien は cat のような streaming プロセス。stdin を EOF まで読み続け、各 block
 の SVG を即座に stdout に流す。block 単位の Mermaid 解析エラーは stderr に
-1 行 (`Error: mermaid block N: <msg>`) 流して継続し、最終的に exit 0 で終わる。
-sekien 自身の失敗 (display 初期化失敗、I/O エラー等) のみ exit 1。
+`<!-- {"id": N} -->` 形式のメタデータ（オプション）とエラーメッセージを出力して継続する。
 
 ### 対話モード
 
@@ -94,12 +79,6 @@ $
 `Ctrl + @` が NUL byte (`\0`) を入力する手段、`Ctrl + D` が EOF を投げて
 sekien を終了させる手段。
 
-> **macOS の注意**: sekien 起動直後の WebView 初期化で terminal の key window
-> を **1 度だけ** 奪う制約あり (tao + wry の API レベルで回避不能)。一度
-> `Cmd + Tab` で terminal にフォーカスを戻せば、以降の block 入力では
-> 再奪取されない (WebView は同一プロセス内で再利用される)。Linux では
-> Xvfb 上で完結するためこの制約はない。
-
 ## オプション
 
 | フラグ | 環境変数 | 説明 |
@@ -107,17 +86,9 @@ sekien を終了させる手段。
 | `--font <name>` | `SEKIEN_FONT` | フォント (CSS font-family 形式) |
 | `--theme <name>` | `SEKIEN_THEME` | mermaid.js テーマ |
 | `--look <name>` | `SEKIEN_LOOK` | 描画スタイル |
-| `--block-id` | — | 各 SVG 出力の先頭にブロック ID (`<!-- block: N -->`) を付与 |
-
-CLI フラグが優先、未指定時は環境変数。
-
-### `--theme` の値
-
-`default` / `base` / `dark` / `forest` / `neutral` / `neo` / `neo-dark` / `redux` / `redux-dark` / `null`
-
-### `--look` の値
-
-`classic` / `handDrawn` / `neo`
+| `--block-id` | — | 各出力の前にメタデータ (`<!-- {"id": N} -->`) を付与 |
+| `--version`, `-v` | — | バージョン表示 |
+| `--help`, `-h` | — | ヘルプ表示 |
 
 ## 動作環境
 
@@ -131,35 +102,16 @@ CLI フラグが優先、未指定時は環境変数。
 
 sekien は Linux では実行のたびに内部で Xvfb を起動し、その仮想 display 上で
 描画する。デスクトップ環境 (X11 / Wayland / Xwayland) や `$DISPLAY` の値は
-一切参照しない。Wayland セッションで Xwayland を介すると、コンポジタが
-ウィンドウを可視位置に出して一瞬画面に flash する問題を防ぐため。
+一切参照しない。
 
-```bash
-apt install xvfb       # Debian/Ubuntu
-dnf install Xvfb       # Fedora
-```
+## 構成
 
-起動した Xvfb は sekien 終了時に自動的に停止する (`-terminate` 起動)。
+詳細なプロトコル仕様は [protocol.md](util/docs/protocol.md) 参照。
 
-## ビルド
+### renderer.rs
 
-```bash
-cargo build --release
-```
-
-`assets/mermaid.min.js` (v11.14.0) はリポジトリに同梱済み。更新する場合は npm から取得して差し替える。
-
-```bash
-npm install mermaid
-cp node_modules/mermaid/dist/mermaid.min.js assets/
-```
-
-## 関連リポジトリ
-
-- [sekien-api](api/rust/): sekien を Rust から呼ぶ wrapper (lib)
-- [sekien-pandoc](../2026-05-20-sekien-pandoc): Pandoc filter (binary)
-
-詳細な protocol 仕様は [DESIGN.md](DESIGN.md) 参照。
+**tao** が提供する OS ネイティブ WebView を起動し、mermaid.js を使って
+Mermaid コードを SVG に変換する。
 
 ## License
 
@@ -169,6 +121,10 @@ Licensed under either of
 - MIT License ([LICENSE-MIT](LICENSE-MIT) or https://opensource.org/licenses/MIT)
 
 at your option.
+
+### Bundled Assets
+
+- `mermaid.js`: Licensed under the [MIT License](assets/mermaid.LICENSE). Copyright (c) 2014 - 2024 Knut Sveidqvist and contributors.
 
 ### Contribution
 

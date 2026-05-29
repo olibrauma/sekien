@@ -40,8 +40,8 @@ use tao::{
 #[cfg(target_os = "linux")]
 use crate::linux_display;
 
-const MERMAID_JS: &str = include_str!("assets/mermaid.min.js");
-const HTML_TEMPLATE: &str = include_str!("assets/render.html");
+const MERMAID_JS: &str = include_str!("../assets/mermaid.min.js");
+const HTML_TEMPLATE: &str = include_str!("../assets/render.html");
 
 /// `mermaid.min.js` から build script (`build.rs`) が抽出したバージョン文字列。
 /// 同梱 JS の差し替え時に手動同期が要らないよう実行時バイナリに焼き込む。

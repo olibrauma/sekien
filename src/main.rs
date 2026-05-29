@@ -108,6 +108,31 @@ fn open_reader(file_path: Option<&str>) -> Result<Box<dyn Read + Send>> {
 }
 
 fn main() -> Result<()> {
+    #[cfg(target_os = "linux")]
+    {
+        // To avoid window flicker on Wayland and ensure reliable headless rendering,
+        // we force xvfb-run if we are in a Wayland session or if no DISPLAY is set.
+        // We also force GDK_BACKEND=x11 to work correctly with Xvfb.
+        let is_wayland = std::env::var("WAYLAND_DISPLAY").is_ok();
+        let no_display = std::env::var("DISPLAY").is_err();
+        let already_in_xvfb = std::env::var("SEKIEN_XVFBRUN").is_ok();
+
+        if (is_wayland || no_display) && !already_in_xvfb {
+            let status = std::process::Command::new("xvfb-run")
+                .arg("-a")
+                .arg("-s")
+                .arg("-screen 0 1280x1024x24")
+                .env("GDK_BACKEND", "x11")
+                .env("LIBGL_ALWAYS_SOFTWARE", "1") // Silence driver warnings
+                .env("SEKIEN_XVFBRUN", "1") // Prevent infinite recursion
+                .arg(std::env::current_exe()?)
+                .args(std::env::args().skip(1))
+                .status()
+                .context("failed to execute xvfb-run. please ensure xvfb is installed.")?;
+            std::process::exit(status.code().unwrap_or(0));
+        }
+    }
+
     let raw: Vec<String> = env::args().skip(1).collect();
     let (options, command) = parse_args(raw)?;
 
