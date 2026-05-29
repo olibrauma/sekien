@@ -139,16 +139,24 @@ fn multi_block_order_is_preserved() {
 
 #[test]
 fn invalid_mermaid_emits_stderr_line_and_exits_zero() {
-    let out = run_stdin(b"thisIsNotAValidMermaidDiagramType");
+    let mut child = cmd()
+        .arg("--block-id")
+        .stdin(Stdio::piped())
+        .stderr(Stdio::piped())
+        .spawn()
+        .expect("spawn sekien");
+    child.stdin.as_mut().unwrap().write_all(b"thisIsNotAValidMermaidDiagramType").unwrap();
+    let out = child.wait_with_output().expect("wait sekien");
+    
     assert!(out.status.success(), "expected exit 0, got {:?}", out.status);
     let stderr = String::from_utf8_lossy(&out.stderr);
     assert!(
-        stderr.contains("<!-- <block id=\"1\"/> -->"),
-        "stderr missing XML comment for block 1: {stderr}"
+        stderr.contains("<!-- {\"id\": 1} -->"),
+        "stderr missing JSON comment for block 1: {stderr}"
     );
     assert!(
-        stderr.contains("<e><![CDATA[\nNo diagram type detected"),
-        "stderr missing structured error message: {stderr}"
+        stderr.contains("No diagram type detected"),
+        "stderr missing error message: {stderr}"
     );
 }
 
@@ -234,7 +242,16 @@ fn multiple_files_is_error() {
 #[test]
 fn continue_on_error_three_blocks_middle_fails() {
     let input = b"graph LR\n  A --> B\0totallyBogusDiagram\0graph TD\n  X --> Y";
-    let out = run_stdin(input);
+    let mut child = cmd()
+        .arg("--block-id")
+        .stdin(Stdio::piped())
+        .stdout(Stdio::piped())
+        .stderr(Stdio::piped())
+        .spawn()
+        .expect("spawn sekien");
+    child.stdin.as_mut().unwrap().write_all(input).unwrap();
+    let out = child.wait_with_output().expect("wait sekien");
+
     assert!(out.status.success(), "expected exit 0, got {:?}", out.status);
     let svg_count = count_subseq(&out.stdout, b"<svg");
     let nul_count = out.stdout.iter().filter(|&&b| b == 0).count();
@@ -242,15 +259,24 @@ fn continue_on_error_three_blocks_middle_fails() {
     assert_eq!(nul_count, 1, "expected 1 NUL separator, got {nul_count}");
     let stderr = String::from_utf8_lossy(&out.stderr);
     assert!(
-        stderr.contains("<!-- <block id=\"2\"/> -->"),
-        "stderr missing XML comment for block 2: {stderr}"
+        stderr.contains("<!-- {\"id\": 2} -->"),
+        "stderr missing JSON comment for block 2: {stderr}"
     );
 }
 
 #[test]
 fn all_blocks_fail_yields_empty_stdout_and_three_stderr_lines() {
     let input = b"bogusOne\0bogusTwo\0bogusThree";
-    let out = run_stdin(input);
+    let mut child = cmd()
+        .arg("--block-id")
+        .stdin(Stdio::piped())
+        .stdout(Stdio::piped())
+        .stderr(Stdio::piped())
+        .spawn()
+        .expect("spawn sekien");
+    child.stdin.as_mut().unwrap().write_all(input).unwrap();
+    let out = child.wait_with_output().expect("wait sekien");
+
     assert!(out.status.success(), "expected exit 0, got {:?}", out.status);
     assert!(
         out.stdout.is_empty(),
@@ -258,7 +284,7 @@ fn all_blocks_fail_yields_empty_stdout_and_three_stderr_lines() {
         out.stdout.len()
     );
     let stderr = String::from_utf8_lossy(&out.stderr);
-    let count = count_subseq(&out.stderr, b"<!-- <block id=");
+    let count = count_subseq(&out.stderr, b"<!-- {\"id\":");
     assert_eq!(count, 3, "expected 3 error blocks, got {count} in: {stderr}");
 }
 

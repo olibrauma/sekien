@@ -335,15 +335,16 @@ impl StreamState {
                         self.pipeline
                     )));
                 }
-                // stderr への出力を構造化形式にする。
-                // <!-- <block id="N"/> -->\n<e><![CDATA[\n message \n]]></e>\n
-                // 複数レコード間は \0 で区切る。
-                let escaped = error.replace("]]>", "]]]]><![CDATA[>");
-                let msg = format!(
-                    "{}<e><![CDATA[\n{}\n]]></e>\n",
-                    format_block_comment(id),
-                    escaped
-                );
+                // stderr への出力。
+                // <!-- {"id": N} -->\nmessage\n
+                // --block-id フラグが指定されている場合のみ ID コメントを含める。
+                let mut msg = String::new();
+                if self.config.show_block_ids {
+                    msg.push_str(&format_block_comment(id));
+                }
+                msg.push_str(&error);
+                msg.push('\n');
+
                 write_to_stderr(&msg, self.wrote_any_error)
                     .context("failed to write error to stderr")?;
                 self.wrote_any_error = true;
@@ -355,7 +356,7 @@ impl StreamState {
 }
 
 fn format_block_comment(id: usize) -> String {
-    format!("<!-- <block id=\"{id}\"/> -->\n")
+    format!("<!-- {{\"id\": {id}}} -->\n")
 }
 
 fn dispatch_render(id: usize, content: &str, wv: &WebView) -> anyhow::Result<()> {
