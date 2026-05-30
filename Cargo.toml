@@ -2,6 +2,7 @@
 name = "sekien"
 version = "0.1.0"
 edition = "2021"
+rust-version = "1.76"
 description = "A lightweight Mermaid-to-SVG renderer using OS native WebView. Supports NUL-delimited streaming protocol for high performance."
 license = "MIT OR Apache-2.0"
 repository = "https://github.com/olibrauma/sekien"
