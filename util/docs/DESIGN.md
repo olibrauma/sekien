@@ -25,6 +25,28 @@ sekien バイナリの動作モードは **1 種類のみ**。単発 CLI 利用�
 - **言語横断的に扱いやすい**: Rust (`Read::read_until(0, ...)`)、Python
   (`bytes.split(b'\\x00')`)、Node (`buffer.split('\\0')`) など、どの言語からも素直
 
+### separator か terminator か
+
+stdout の `\0` は **separator**（ブロック間に 1 個）であり **terminator**（各ブロックの末尾に付く）ではない。
+N ブロックの出力に含まれる `\0` は N-1 個で、末尾には付かない。
+
+この選択の主な理由は **単一ファイル変換の利便性**:
+
+```bash
+sekien input.mmd > output.svg   # 最も多いユースケース
+```
+
+terminator 方式だと `output.svg` の末尾に `\0` が残り、後続ツールへの
+受け渡しや SVG ビューアでの表示前に剥がす手間が生じる。separator 方式なら
+1 ブロックの出力は `<svg>\n` で完結し、そのままファイルに書ける。
+
+複数ブロックの出力を受け取る側 (awk の `RS="\0"` など) も、trailing `\0` が
+無いことを自然に扱える (terminator 方式では末尾に余分な空要素が生じる)。
+
+stdin の末尾 `\0` 1 個を無視するのも同じ思想の裏返しで、Unix ツール
+(`find -print0`, `printf '%s\0' ...`) が自然に付ける trailing NUL を
+"空ブロック" として誤解釈しないための対称的な措置。
+
 ### Unix pipeline 利用例
 
 たいていのユースケースは ".mmd N 個 → .svg N 個" なので shell loop で十分:
