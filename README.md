@@ -10,10 +10,10 @@ OS ネイティブの WebView を活用することで、標準的な `mmdc` (Pu
 
 いずれの環境でも実行速度・メモリ使用量ともに優位なのは、重量級の Chromium をバンドルせず、OS 標準の描画エンジンをダイレクトに叩くためです。
 
-- `util/bench/` の 3 図の中央値。 mmdc は 11.12.0
+- `util/bench/` の 3 図の中央値。 mmdc は 11.14.0
 - 計測環境: macOS (arm64)、sekien 0.1.0 (mermaid.js 11.14.0)
-- 計測環境: Linux (x86_64)、内部 Xvfb 使用
-- Max RSS は Xvfb を含む全子プロセスの合計最大値。
+- 計測環境: Linux (x86_64)、sekien 0.1.0 (mermaid.js 11.14.0)、内部 Xvfb 使用
+- Max RSS は Xvfb/WebKit/Chromium を含む全子プロセスの合計最大値 (`util/bench/bench.sh` 参照)。
 
 ### バイナリサイズ
 
@@ -27,14 +27,14 @@ OS ネイティブの WebView を活用することで、標準的な `mmdc` (Pu
 | platform | sekien | mmdc | Advantage |
 |---|---|---|---|
 | Mac | **~360 ms** | ~1.1 s | **67% 速い** |
-| Linux | **~800 ms** | ~1.1 s | **27% 速い** |
+| Linux | **~1.1 s** | ~1.6 s | **31% 速い** |
 
 ### メモリ使用量
 
 | platform | sekien | mmdc | Advantage |
 |---|---|---|---|
 | Mac | **~90 MB** | ~690 MB | **87% 軽い** |
-| Linux | **~440 MB** | ~630 MB | **30% 軽い** |
+| Linux | **~430 MB** | ~630 MB | **32% 軽い** |
 
 ## インストール
 
