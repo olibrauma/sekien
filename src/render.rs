@@ -30,12 +30,12 @@ use anyhow::{Context, Result};
 use serde::Deserialize;
 use std::collections::VecDeque;
 use std::io::{self, BufRead, BufReader, Read, Write};
-use wry::{WebView, WebViewBuilder};
 use tao::{
     event::{Event, WindowEvent},
     event_loop::{ControlFlow, EventLoopBuilder, EventLoopProxy, EventLoopWindowTarget},
     window::{Window, WindowBuilder},
 };
+use wry::{WebView, WebViewBuilder};
 
 #[cfg(target_os = "linux")]
 use crate::linux_display;
@@ -98,21 +98,23 @@ fn js_string_in_html(s: &str) -> String {
 
 fn build_html(config: &RenderConfig) -> String {
     let extra_config: String = [
-        ("theme",      &config.theme),
+        ("theme", &config.theme),
         ("fontFamily", &config.font_family),
-        ("look",       &config.look),
+        ("look", &config.look),
     ]
     .iter()
-    .filter_map(|(k, v)| v.as_deref().map(|v| format!(
-        "  {k}: {},\n",
-        js_string_in_html(v)
-    )))
+    .filter_map(|(k, v)| {
+        v.as_deref()
+            .map(|v| format!("  {k}: {},\n", js_string_in_html(v)))
+    })
     .collect();
 
     // CONFIG_JSON: --config で渡された JSON を spread する。
     // 未指定時は空オブジェクト `{}` を使う (`...{}` は no-op)。
     // 個別フラグ (EXTRA_CONFIG) が後に来るので CLI フラグが config file より優先される。
-    let config_json = config.config_json.as_deref()
+    let config_json = config
+        .config_json
+        .as_deref()
         .map_or_else(|| "{}".to_string(), escape_for_script);
 
     // `assets/render.html` の各 placeholder を差し替える。
@@ -165,8 +167,16 @@ fn create_webview(
 /// emit して `false` を返す (caller が読み込みを打ち切るシグナル)。
 fn emit_block<F: FnMut(LoopEvent)>(buf: &mut Vec<u8>, on_event: &mut F) -> bool {
     String::from_utf8(std::mem::take(buf))
-        .map(|s| { on_event(LoopEvent::Block(s)); true })
-        .unwrap_or_else(|e| { on_event(LoopEvent::InputError(format!("input is not valid UTF-8: {e}"))); false })
+        .map(|s| {
+            on_event(LoopEvent::Block(s));
+            true
+        })
+        .unwrap_or_else(|e| {
+            on_event(LoopEvent::InputError(format!(
+                "input is not valid UTF-8: {e}"
+            )));
+            false
+        })
 }
 
 /// 入力 stream を読みつつ `\0` で分割し、block ごとに `on_event` を呼ぶ。
@@ -184,9 +194,13 @@ fn read_blocks<R: Read>(reader: R, mut on_event: impl FnMut(LoopEvent)) {
             Ok(0) => break,
             Ok(_) => {
                 let is_nul = buf.last() == Some(&0);
-                if is_nul { buf.pop(); }
+                if is_nul {
+                    buf.pop();
+                }
                 let should_emit = is_nul || !String::from_utf8_lossy(&buf).trim().is_empty();
-                if should_emit && !emit_block(&mut buf, &mut on_event) { return; }
+                if should_emit && !emit_block(&mut buf, &mut on_event) {
+                    return;
+                }
                 buf.clear();
             }
             Err(e) => {
@@ -234,7 +248,10 @@ enum Channel {
 
 impl Channel {
     fn kind(self) -> &'static str {
-        match self { Channel::Stdout => "svg", Channel::Stderr => "error" }
+        match self {
+            Channel::Stdout => "svg",
+            Channel::Stderr => "error",
+        }
     }
 }
 
@@ -307,7 +324,11 @@ impl StreamState {
             return Ok(Continuation::Continue);
         }
         // queue 空、Idle (= awaiting 無し、ready)
-        Ok(if self.end_received { Continuation::Done } else { Continuation::Continue })
+        Ok(if self.end_received {
+            Continuation::Done
+        } else {
+            Continuation::Continue
+        })
     }
 
     /// pipeline が `Awaiting(id)` であることを検証する。
@@ -316,14 +337,19 @@ impl StreamState {
             Ok(())
         } else {
             Err(ipc_protocol_error(&format!(
-                "'{kind}' id {id} does not match pipeline state {:?}", self.pipeline
+                "'{kind}' id {id} does not match pipeline state {:?}",
+                self.pipeline
             )))
         }
     }
 
     /// block comment (オプション) + content + `\n` を組み立てる。
     fn format_output(&self, id: usize, content: &str) -> String {
-        let prefix = if self.config.show_block_ids { format_block_comment(id) } else { String::new() };
+        let prefix = if self.config.show_block_ids {
+            format_block_comment(id)
+        } else {
+            String::new()
+        };
         format!("{prefix}{content}\n")
     }
 
@@ -337,7 +363,7 @@ impl StreamState {
                 self.pipeline = Pipeline::Idle;
                 return self.try_dispatch_next(wv);
             }
-            IpcMessage::Svg { id, svg }     => (id, svg,   Channel::Stdout),
+            IpcMessage::Svg { id, svg } => (id, svg, Channel::Stdout),
             IpcMessage::Error { id, error } => (id, error, Channel::Stderr),
         };
 
@@ -376,7 +402,9 @@ fn dispatch_render(id: usize, content: &str, wv: &WebView) -> anyhow::Result<()>
 }
 
 fn write_output(mut out: impl Write, content: &str, write_separator: bool) -> io::Result<()> {
-    if write_separator { out.write_all(&[0])?; }
+    if write_separator {
+        out.write_all(&[0])?;
+    }
     out.write_all(content.as_bytes())?;
     out.flush()
 }
@@ -413,7 +441,11 @@ pub fn run_stream<R: Read + Send + 'static>(reader: R, config: &RenderConfig) ->
     let webview = create_webview(&window, build_html(config), proxy.clone())
         .unwrap_or_else(|e| exit_fatal(e));
 
-    std::thread::spawn(move || read_blocks(reader, |ev| { let _ = proxy.send_event(ev); }));
+    std::thread::spawn(move || {
+        read_blocks(reader, |ev| {
+            let _ = proxy.send_event(ev);
+        })
+    });
 
     let mut state = StreamState::new(config.clone());
     event_loop.run(move |event, _event_loop, control_flow| {
@@ -421,7 +453,10 @@ pub fn run_stream<R: Read + Send + 'static>(reader: R, config: &RenderConfig) ->
         let _keep_window_alive = &window;
         match event {
             Event::UserEvent(ev) => dispatch_or_exit(state.handle(ev, &webview)),
-            Event::WindowEvent { event: WindowEvent::CloseRequested, .. } => {
+            Event::WindowEvent {
+                event: WindowEvent::CloseRequested,
+                ..
+            } => {
                 *control_flow = ControlFlow::Exit;
             }
             _ => {}
@@ -549,8 +584,11 @@ mod tests {
         };
         let html = build_html(&config);
         let spread_pos = html.find("...{").unwrap();
-        let theme_pos  = html.find("theme: \"forest\"").unwrap();
-        assert!(spread_pos < theme_pos, "spread must appear before CLI flag override");
+        let theme_pos = html.find("theme: \"forest\"").unwrap();
+        assert!(
+            spread_pos < theme_pos,
+            "spread must appear before CLI flag override"
+        );
     }
 
     fn parse_ipc(s: &str) -> Result<IpcMessage, serde_json::Error> {
@@ -622,10 +660,10 @@ mod tests {
         let mut error: Option<String> = None;
         let mut ended = false;
         read_blocks(std::io::Cursor::new(bytes.to_vec()), |ev| match ev {
-            LoopEvent::Block(s)      => blocks.push(s),
-            LoopEvent::InputEnd      => ended = true,
+            LoopEvent::Block(s) => blocks.push(s),
+            LoopEvent::InputEnd => ended = true,
             LoopEvent::InputError(e) => error = Some(e),
-            LoopEvent::Ipc(_)        => unreachable!("read_blocks never emits Ipc"),
+            LoopEvent::Ipc(_) => unreachable!("read_blocks never emits Ipc"),
         });
         (blocks, error, ended)
     }

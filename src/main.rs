@@ -1,6 +1,6 @@
-mod render;
 #[cfg(target_os = "linux")]
 mod linux_display;
+mod render;
 
 use anyhow::{bail, Context, Result};
 use render::{RenderConfig, MERMAID_VERSION};
@@ -97,14 +97,19 @@ fn parse_args(raw: Vec<String>) -> Result<(Options, Command)> {
         );
     }
 
-    Ok((options, Command::Render { file: rest.into_iter().next() }))
+    Ok((
+        options,
+        Command::Render {
+            file: rest.into_iter().next(),
+        },
+    ))
 }
 
 fn load_config_json(path: &str) -> Result<String> {
-    let raw = fs::read_to_string(path)
-        .with_context(|| format!("cannot read config file '{path}'"))?;
-    let value: serde_json::Value = serde_json::from_str(&raw)
-        .with_context(|| format!("invalid JSON in '{path}'"))?;
+    let raw =
+        fs::read_to_string(path).with_context(|| format!("cannot read config file '{path}'"))?;
+    let value: serde_json::Value =
+        serde_json::from_str(&raw).with_context(|| format!("invalid JSON in '{path}'"))?;
     if !value.is_object() {
         bail!("'{path}': expected a JSON object");
     }
@@ -115,12 +120,16 @@ fn main() -> Result<()> {
     let raw: Vec<String> = env::args().skip(1).collect();
     let (options, command) = parse_args(raw)?;
 
-    let config_json = options.config_file.as_deref().map(load_config_json).transpose()?;
+    let config_json = options
+        .config_file
+        .as_deref()
+        .map(load_config_json)
+        .transpose()?;
 
     let config = RenderConfig {
         font_family: options.font_family,
-        theme:       options.theme,
-        look:        options.look,
+        theme: options.theme,
+        look: options.look,
         show_block_ids: options.show_block_ids,
         config_json,
     };
@@ -128,12 +137,18 @@ fn main() -> Result<()> {
     match command {
         Command::Help => println!("{}", usage()),
         Command::Version => {
-            println!("sekien {} (mermaid.js {})", env!("CARGO_PKG_VERSION"), MERMAID_VERSION);
+            println!(
+                "sekien {} (mermaid.js {})",
+                env!("CARGO_PKG_VERSION"),
+                MERMAID_VERSION
+            );
         }
         Command::Render { file } => {
             let reader: Box<dyn Read + Send> = match file.as_deref() {
-                Some(p) => Box::new(fs::File::open(p).with_context(|| format!("cannot read '{p}'"))?),
-                None    => Box::new(io::stdin()),
+                Some(p) => {
+                    Box::new(fs::File::open(p).with_context(|| format!("cannot read '{p}'"))?)
+                }
+                None => Box::new(io::stdin()),
             };
             render::run_stream(reader, &config)?;
         }
@@ -183,7 +198,9 @@ mod tests {
     #[test]
     fn render_with_file() {
         let (_, cmd) = parse_args(args(&["diagram.mmd"])).unwrap();
-        assert!(matches!(cmd, Command::Render { ref file } if file.as_deref() == Some("diagram.mmd")));
+        assert!(
+            matches!(cmd, Command::Render { ref file } if file.as_deref() == Some("diagram.mmd"))
+        );
     }
 
     #[test]

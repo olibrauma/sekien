@@ -37,9 +37,13 @@ pub fn ensure_display() -> Result<()> {
 
 fn spawn_xvfb() -> Result<()> {
     let mut child = Command::new("Xvfb")
-        .arg("-displayfd").arg("1")
-        .arg("-screen").arg("0").arg("100x100x24")
-        .arg("-nolisten").arg("tcp")
+        .arg("-displayfd")
+        .arg("1")
+        .arg("-screen")
+        .arg("0")
+        .arg("100x100x24")
+        .arg("-nolisten")
+        .arg("tcp")
         .arg("-terminate")
         .stdin(Stdio::null())
         .stdout(Stdio::piped())
@@ -55,8 +59,13 @@ fn spawn_xvfb() -> Result<()> {
         let mut reader = BufReader::new(stdout);
         let mut line = String::new();
         let res = match reader.read_line(&mut line) {
-            Ok(0) => Err(anyhow!("Xvfb closed stdout before reporting display number")),
-            Ok(_) => line.trim().parse::<u32>().context("parse display number from Xvfb"),
+            Ok(0) => Err(anyhow!(
+                "Xvfb closed stdout before reporting display number"
+            )),
+            Ok(_) => line
+                .trim()
+                .parse::<u32>()
+                .context("parse display number from Xvfb"),
             Err(e) => Err(e.into()),
         };
         let _ = tx.send(res);
@@ -65,9 +74,12 @@ fn spawn_xvfb() -> Result<()> {
         let _ = reader.read_to_end(&mut buf);
     });
 
-    let display_num = rx.recv_timeout(Duration::from_secs(10))
+    let display_num = rx
+        .recv_timeout(Duration::from_secs(10))
         .unwrap_or_else(|_| Err(anyhow!("Xvfb did not become ready in time")))
-        .inspect_err(|_| { let _ = child.kill(); })?;
+        .inspect_err(|_| {
+            let _ = child.kill();
+        })?;
     std::env::set_var("DISPLAY", format!(":{display_num}"));
     Ok(())
 }
