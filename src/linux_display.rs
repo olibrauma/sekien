@@ -63,7 +63,9 @@ fn spawn_xvfb() -> Result<()> {
         let mut reader = BufReader::new(stdout);
         let mut line = String::new();
         let res = match reader.read_line(&mut line) {
-            Ok(0) => Err(anyhow!("Xvfb closed stdout before reporting display number")),
+            Ok(0) => Err(anyhow!(
+                "Xvfb closed stdout before reporting display number"
+            )),
             Ok(_) => line
                 .trim()
                 .parse::<u32>()
