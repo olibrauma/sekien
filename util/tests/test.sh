@@ -177,11 +177,11 @@ SVG_COUNT=$(count_svg_in_file "$TMPOUT")
 [ "$SVG_COUNT" -gt 0 ] && pass "stdout contains <svg" || fail "stdout missing <svg"
 echo ""
 
-# --- テスト 12: SEKIEN_CONFIG 環境変数 ---
-echo "[12] SEKIEN_CONFIG env → SVG を生成"
+# --- テスト 12: --config オプション ---
+echo "[12] --config → SVG を生成"
 CFGTMP=$(mktemp /tmp/sekien_test_XXXXXX.json)
 printf '{"theme":"dark"}' > "$CFGTMP"
-printf 'graph LR\n  A --> B\n' | SEKIEN_CONFIG="$CFGTMP" "$BINARY" > "$TMPOUT" 2>"$TMPERR"
+printf 'graph LR\n  A --> B\n' | "$BINARY" --config "$CFGTMP" > "$TMPOUT" 2>"$TMPERR"
 EXIT=$?
 rm -f "$CFGTMP"
 [ $EXIT -eq 0 ] && pass "exit 0" || fail "exit $EXIT (expected 0)"

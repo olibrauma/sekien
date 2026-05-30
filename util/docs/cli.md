@@ -68,9 +68,6 @@ mermaid.js のテーマ。以下の値を受け付ける:
 - CLI フラグ (`--theme` 等) は config ファイルの同名キーより**優先**される。
 - `startOnLoad` / `htmlLabels` は sekien の動作に必須のため、config ファイルの値に
   関わらず常に上書きされる。
-- 環境変数 `SEKIEN_CONFIG` でも指定可能。`--config` を明示した場合は env var より優先。
-- **`--config ""`** を渡すと `SEKIEN_CONFIG` を無視してデフォルト動作になる。
-  sekien を外部バイナリとして呼び出す親アプリが env var の影響を遮断するための手段。
 
 ### `--block-id`
 
@@ -97,9 +94,12 @@ sekien <semver> (mermaid.js <semver>)
 
 ## 4. 環境変数
 
-| 変数 | 対応フラグ | 説明 |
-|---|---|---|
-| `SEKIEN_CONFIG` | `--config` | mermaid.initialize() 設定 JSON ファイルのパス |
+環境変数によるデフォルト設定はサポートしない。
+永続的なデフォルトが必要な場合はシェルエイリアスで代替する:
+
+```bash
+alias sekien='sekien --config ~/.config/sekien.json'
+```
 
 CLI フラグと環境変数を両方指定した場合、**CLI フラグが優先**される。
 

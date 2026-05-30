@@ -36,8 +36,6 @@ Options:
                          handDrawn is supported for flowchart/graph only.
   --config <file>        JSON config file for mermaid.initialize()
                          (see https://mermaid.js.org/config/schema-docs/config.html)
-                         Also configurable via SEKIEN_CONFIG env var.
-                         --config \"\" ignores SEKIEN_CONFIG and uses defaults.
                          CLI flags (--theme etc.) take precedence over this file.
   --block-id             Prepend <!-- {{\"id\": N}} --> before each stdout (SVG) and
                          stderr (error) output
@@ -117,16 +115,7 @@ fn main() -> Result<()> {
     let raw: Vec<String> = env::args().skip(1).collect();
     let (options, command) = parse_args(raw)?;
 
-    // --config "" は「env var を無視してデフォルト動作」を明示するセンチネル。
-    // 親アプリが外部バイナリとして sekien を呼び出す際に SEKIEN_CONFIG の影響を
-    // 遮断するための手段として提供する。
-    let config_path: Option<String> = match options.config_file {
-        Some(ref s) if s.is_empty() => None,                                     // --config "" → env var を無視
-        Some(_)                     => options.config_file,                       // --config <file>
-        None                        => env::var("SEKIEN_CONFIG").ok()             // env var にフォールバック
-                                           .filter(|s| !s.is_empty()),
-    };
-    let config_json = match config_path {
+    let config_json = match options.config_file {
         Some(path) => {
             let raw = fs::read_to_string(&path)
                 .with_context(|| format!("cannot read config file '{path}'"))?;

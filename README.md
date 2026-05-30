@@ -86,7 +86,7 @@ sekien を終了させる手段。
 | `--font <name>` | — | フォント (CSS font-family 形式) |
 | `--theme <name>` | — | mermaid.js テーマ |
 | `--look <name>` | — | 描画スタイル |
-| `--config <file>` | `SEKIEN_CONFIG` | mermaid.initialize() 設定 JSON ファイル |
+| `--config <file>` | — | mermaid.initialize() 設定 JSON ファイル |
 | `--block-id` | — | 各出力の前にメタデータ (`<!-- {"id": N} -->`) を付与 |
 | `--version`, `-v` | — | バージョン表示 |
 | `--help`, `-h` | — | ヘルプ表示 |
