@@ -310,54 +310,44 @@ impl StreamState {
         Ok(if self.end_received { Continuation::Done } else { Continuation::Continue })
     }
 
+    /// pipeline が `Awaiting(id)` であることを検証する。
+    fn check_awaiting(&self, id: usize, kind: &str) -> Result<()> {
+        if matches!(self.pipeline, Pipeline::Awaiting(n) if n == id) {
+            Ok(())
+        } else {
+            Err(ipc_protocol_error(&format!(
+                "'{kind}' id {id} does not match pipeline state {:?}", self.pipeline
+            )))
+        }
+    }
+
+    /// block comment (オプション) + content + `\n` を組み立てる。
+    fn format_output(&self, id: usize, content: &str) -> String {
+        let mut s = if self.config.show_block_ids { format_block_comment(id) } else { String::new() };
+        s.push_str(content);
+        s.push('\n');
+        s
+    }
+
     fn on_ipc(&mut self, msg: &str, wv: &WebView) -> StepResult {
         let parsed: IpcMessage = serde_json::from_str(msg)
             .map_err(|e| ipc_protocol_error(&format!("{e} (raw: {msg})")))?;
         match parsed {
             IpcMessage::Ready => {
-                // 初回 ready で dispatch gate を開く。2 回目以降は冪等。
                 self.pipeline = Pipeline::Idle;
                 self.try_dispatch_next(wv)
             }
             IpcMessage::Svg { id, svg } => {
-                if !matches!(self.pipeline, Pipeline::Awaiting(n) if n == id) {
-                    return Err(ipc_protocol_error(&format!(
-                        "'svg' id {id} does not match pipeline state {:?}",
-                        self.pipeline
-                    )));
-                }
-                // 複数レコード間は \0 で区切る (2 件目以降の直前に \0 を挿入)。
-                let mut output = String::new();
-                if self.config.show_block_ids {
-                    output.push_str(&format_block_comment(id));
-                }
-                output.push_str(&svg);
-                output.push('\n');
-
-                write_output(io::stdout().lock(), &output, self.wrote_any_svg)
+                self.check_awaiting(id, "svg")?;
+                write_output(io::stdout().lock(), &self.format_output(id, &svg), self.wrote_any_svg)
                     .context("failed to write SVG to stdout")?;
                 self.wrote_any_svg = true;
                 self.pipeline = Pipeline::Idle;
                 self.try_dispatch_next(wv)
             }
             IpcMessage::Error { id, error } => {
-                if !matches!(self.pipeline, Pipeline::Awaiting(n) if n == id) {
-                    return Err(ipc_protocol_error(&format!(
-                        "'error' id {id} does not match pipeline state {:?}",
-                        self.pipeline
-                    )));
-                }
-                // stderr への出力。
-                // <!-- {"id": N} -->\nmessage\n
-                // --block-id フラグが指定されている場合のみ ID コメントを含める。
-                let mut msg = String::new();
-                if self.config.show_block_ids {
-                    msg.push_str(&format_block_comment(id));
-                }
-                msg.push_str(&error);
-                msg.push('\n');
-
-                write_output(io::stderr().lock(), &msg, self.wrote_any_error)
+                self.check_awaiting(id, "error")?;
+                write_output(io::stderr().lock(), &self.format_output(id, &error), self.wrote_any_error)
                     .context("failed to write error to stderr")?;
                 self.wrote_any_error = true;
                 self.pipeline = Pipeline::Idle;
