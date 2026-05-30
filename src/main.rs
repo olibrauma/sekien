@@ -30,13 +30,10 @@ EOF (Ctrl + D) で sekien を終了させる。
 
 Options:
   --font <font>          Font family for diagram text (default: mermaid.js default)
-                         Also configurable via SEKIEN_FONT env var.
   --theme <theme>        Mermaid theme (default | base | dark | forest | neutral |
                            neo | neo-dark | redux | redux-dark | null)
-                         Also configurable via SEKIEN_THEME env var.
   --look <look>          Diagram look (classic | handDrawn | neo)
                          handDrawn is supported for flowchart/graph only.
-                         Also configurable via SEKIEN_LOOK env var.
   --config <file>        JSON config file for mermaid.initialize()
                          (see https://mermaid.js.org/config/schema-docs/config.html)
                          Also configurable via SEKIEN_CONFIG env var.
@@ -134,9 +131,9 @@ fn main() -> Result<()> {
     };
 
     let config = RenderConfig {
-        font_family: options.font_family.or_else(|| env::var("SEKIEN_FONT").ok()),
-        theme:       options.theme      .or_else(|| env::var("SEKIEN_THEME").ok()),
-        look:        options.look       .or_else(|| env::var("SEKIEN_LOOK").ok()),
+        font_family: options.font_family,
+        theme:       options.theme,
+        look:        options.look,
         show_block_ids: options.show_block_ids,
         config_json,
     };

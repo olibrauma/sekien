@@ -83,9 +83,10 @@ sekien を終了させる手段。
 
 | フラグ | 環境変数 | 説明 |
 |---|---|---|
-| `--font <name>` | `SEKIEN_FONT` | フォント (CSS font-family 形式) |
-| `--theme <name>` | `SEKIEN_THEME` | mermaid.js テーマ |
-| `--look <name>` | `SEKIEN_LOOK` | 描画スタイル |
+| `--font <name>` | — | フォント (CSS font-family 形式) |
+| `--theme <name>` | — | mermaid.js テーマ |
+| `--look <name>` | — | 描画スタイル |
+| `--config <file>` | `SEKIEN_CONFIG` | mermaid.initialize() 設定 JSON ファイル |
 | `--block-id` | — | 各出力の前にメタデータ (`<!-- {"id": N} -->`) を付与 |
 | `--version`, `-v` | — | バージョン表示 |
 | `--help`, `-h` | — | ヘルプ表示 |

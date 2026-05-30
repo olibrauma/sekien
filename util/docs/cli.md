@@ -29,7 +29,6 @@ sekien --help    | -h
 図中のテキストに使うフォントファミリー。CSS の `font-family` と同じ書式を受け付ける。
 
 - デフォルト: mermaid.js の既定値
-- 環境変数 `SEKIEN_FONT` でも指定可能（CLI フラグが優先）
 
 ### `--theme <theme>`
 
@@ -38,7 +37,6 @@ mermaid.js のテーマ。以下の値を受け付ける:
 `default` | `base` | `dark` | `forest` | `neutral` | `neo` | `neo-dark` | `redux` | `redux-dark` | `null`
 
 - デフォルト: mermaid.js の既定値 (`default`)
-- 環境変数 `SEKIEN_THEME` でも指定可能（CLI フラグが優先）
 - 値の妥当性検証は行わない。不正な値は mermaid.js 側でフォールバックされる。
 
 ### `--look <look>`
@@ -49,7 +47,6 @@ mermaid.js のテーマ。以下の値を受け付ける:
 
 - デフォルト: mermaid.js の既定値
 - `handDrawn` は flowchart / graph 型のみ対応
-- 環境変数 `SEKIEN_LOOK` でも指定可能（CLI フラグが優先）
 - 値の妥当性検証は行わない。
 
 ### `--config <file>`
@@ -100,9 +97,6 @@ sekien <semver> (mermaid.js <semver>)
 
 | 変数 | 対応フラグ | 説明 |
 |---|---|---|
-| `SEKIEN_FONT` | `--font` | フォントファミリー |
-| `SEKIEN_THEME` | `--theme` | mermaid.js テーマ |
-| `SEKIEN_LOOK` | `--look` | 描画スタイル |
 | `SEKIEN_CONFIG` | `--config` | mermaid.initialize() 設定 JSON ファイルのパス |
 
 CLI フラグと環境変数を両方指定した場合、**CLI フラグが優先**される。
