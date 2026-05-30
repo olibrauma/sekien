@@ -185,8 +185,8 @@ fn read_blocks<R: Read>(reader: R, mut on_event: impl FnMut(LoopEvent)) {
             Ok(_) => {
                 let is_nul = buf.last() == Some(&0);
                 if is_nul { buf.pop(); }
-                if (is_nul || !String::from_utf8_lossy(&buf).trim().is_empty())
-                    && !emit_block(&mut buf, &mut on_event) { return; }
+                let should_emit = is_nul || !String::from_utf8_lossy(&buf).trim().is_empty();
+                if should_emit && !emit_block(&mut buf, &mut on_event) { return; }
                 buf.clear();
             }
             Err(e) => {
