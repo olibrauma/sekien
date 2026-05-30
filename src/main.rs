@@ -29,13 +29,13 @@ EOF (Ctrl + D) で sekien を終了させる。
 
 Options:
   --font <font>          Font family for diagram text (default: mermaid.js default)
-                         Also configurable via SEKIEN_FONT env var.
   --theme <theme>        Mermaid theme (default | base | dark | forest | neutral |
                            neo | neo-dark | redux | redux-dark | null)
-                         Also configurable via SEKIEN_THEME env var.
   --look <look>          Diagram look (classic | handDrawn | neo)
                          handDrawn is supported for flowchart/graph only.
-                         Also configurable via SEKIEN_LOOK env var.
+  --config <file>        JSON config file for mermaid.initialize()
+                         (see https://mermaid.js.org/config/schema-docs/config.html)
+                         CLI flags (--theme etc.) take precedence over this file.
   --block-id             Prepend <!-- {{\"id\": N}} --> before each stdout (SVG) and
                          stderr (error) output
   --version, -v          Show version
@@ -49,6 +49,7 @@ struct Options {
     theme: Option<String>,
     look: Option<String>,
     show_block_ids: bool,
+    config_file: Option<String>,
 }
 
 enum Command {
@@ -78,6 +79,9 @@ fn parse_args(raw: Vec<String>) -> Result<(Options, Command)> {
             "--block-id" => {
                 options.show_block_ids = true;
             }
+            "--config" => {
+                options.config_file = Some(iter.next().context("--config requires a value")?);
+            }
             _ if arg.starts_with('-') => {
                 bail!("unknown option: {arg}");
             }
@@ -96,25 +100,29 @@ fn parse_args(raw: Vec<String>) -> Result<(Options, Command)> {
     Ok((options, Command::Render { file: rest.into_iter().next() }))
 }
 
-fn open_reader(file_path: Option<&str>) -> Result<Box<dyn Read + Send>> {
-    match file_path {
-        Some(p) => {
-            let f = fs::File::open(p).with_context(|| format!("cannot read '{p}'"))?;
-            Ok(Box::new(f))
-        }
-        None => Ok(Box::new(io::stdin())),
+fn load_config_json(path: &str) -> Result<String> {
+    let raw = fs::read_to_string(path)
+        .with_context(|| format!("cannot read config file '{path}'"))?;
+    let value: serde_json::Value = serde_json::from_str(&raw)
+        .with_context(|| format!("invalid JSON in '{path}'"))?;
+    if !value.is_object() {
+        bail!("'{path}': expected a JSON object");
     }
+    Ok(value.to_string())
 }
 
 fn main() -> Result<()> {
     let raw: Vec<String> = env::args().skip(1).collect();
     let (options, command) = parse_args(raw)?;
 
+    let config_json = options.config_file.as_deref().map(load_config_json).transpose()?;
+
     let config = RenderConfig {
-        font_family: options.font_family.or_else(|| env::var("SEKIEN_FONT").ok()),
-        theme:       options.theme      .or_else(|| env::var("SEKIEN_THEME").ok()),
-        look:        options.look       .or_else(|| env::var("SEKIEN_LOOK").ok()),
+        font_family: options.font_family,
+        theme:       options.theme,
+        look:        options.look,
         show_block_ids: options.show_block_ids,
+        config_json,
     };
 
     match command {
@@ -123,7 +131,10 @@ fn main() -> Result<()> {
             println!("sekien {} (mermaid.js {})", env!("CARGO_PKG_VERSION"), MERMAID_VERSION);
         }
         Command::Render { file } => {
-            let reader = open_reader(file.as_deref())?;
+            let reader: Box<dyn Read + Send> = match file.as_deref() {
+                Some(p) => Box::new(fs::File::open(p).with_context(|| format!("cannot read '{p}'"))?),
+                None    => Box::new(io::stdin()),
+            };
             render::run_stream(reader, &config)?;
         }
     }
@@ -213,6 +224,17 @@ mod tests {
     #[test]
     fn look_flag_missing_value_is_error() {
         assert!(parse_args(args(&["--look"])).is_err());
+    }
+
+    #[test]
+    fn config_flag() {
+        let (opts, _) = parse_args(args(&["--config", "config.json"])).unwrap();
+        assert_eq!(opts.config_file, Some("config.json".to_string()));
+    }
+
+    #[test]
+    fn config_flag_missing_value_is_error() {
+        assert!(parse_args(args(&["--config"])).is_err());
     }
 
     #[test]

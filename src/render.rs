@@ -53,6 +53,9 @@ pub struct RenderConfig {
     pub theme: Option<String>,
     pub look: Option<String>,
     pub show_block_ids: bool,
+    /// `--config` で渡された JSON オブジェクト文字列（正規化済み）。
+    /// `mermaid.initialize()` に spread される。
+    pub config_json: Option<String>,
 }
 
 /// event loop で扱う user event。reader thread (Block / InputEnd / InputError)
@@ -80,16 +83,17 @@ enum IpcMessage {
     Error { id: usize, error: String },
 }
 
-/// HTML の `<script>` ブロック内に埋め込める JS 文字列リテラルに変換する。
+/// `<script>` 内に安全に埋め込めるよう `<` / `>` を Unicode エスケープする。
 ///
-/// `serde_json::to_string` は valid な JS 文字列リテラルを返すが `<` を escape
-/// しないため、`</script>` 等が含まれると script タグを抜けて HTML を破壊できる。
-/// `<` と `>` を `<` / `>` に置換して script context でも安全にする。
+/// serde_json は `<` / `>` をエスケープしないため、`</script>` 等が含まれると
+/// script タグを早期終了させて HTML を破壊できる。
+/// 文字列リテラル・JSON オブジェクトいずれの埋め込みにも使う。
+fn escape_for_script(s: &str) -> String {
+    s.replace('<', "\\u003c").replace('>', "\\u003e")
+}
+
 fn js_string_in_html(s: &str) -> String {
-    serde_json::to_string(s)
-        .expect("serialize config field")
-        .replace('<', "\\u003c")
-        .replace('>', "\\u003e")
+    escape_for_script(&serde_json::to_string(s).expect("serialize config field"))
 }
 
 fn build_html(config: &RenderConfig) -> String {
@@ -104,11 +108,19 @@ fn build_html(config: &RenderConfig) -> String {
         js_string_in_html(v)
     )))
     .collect();
-    // `assets/render.html` の `{{MERMAID_JS}}` / `{{EXTRA_CONFIG}}` を差し替える。
-    // mermaid.min.js も extra_config も両 placeholder 文字列を含まないため
-    // ナイーブな `String::replace` で衝突しない (テンプレートエンジン不要)。
+
+    // CONFIG_JSON: --config で渡された JSON を spread する。
+    // 未指定時は空オブジェクト `{}` を使う (`...{}` は no-op)。
+    // 個別フラグ (EXTRA_CONFIG) が後に来るので CLI フラグが config file より優先される。
+    let config_json = config.config_json.as_deref()
+        .map_or_else(|| "{}".to_string(), escape_for_script);
+
+    // `assets/render.html` の各 placeholder を差し替える。
+    // mermaid.min.js / extra_config / config_json はいずれも placeholder 文字列を
+    // 含まないため、ナイーブな `String::replace` で衝突しない (テンプレートエンジン不要)。
     HTML_TEMPLATE
         .replace("{{MERMAID_JS}}", MERMAID_JS)
+        .replace("{{CONFIG_JSON}}", &config_json)
         .replace("{{EXTRA_CONFIG}}", &extra_config)
 }
 
@@ -152,13 +164,9 @@ fn create_webview(
 /// `buf` を 1 つの `Block` として emit する。UTF-8 invalid なら `InputError` を
 /// emit して `false` を返す (caller が読み込みを打ち切るシグナル)。
 fn emit_block<F: FnMut(LoopEvent)>(buf: &mut Vec<u8>, on_event: &mut F) -> bool {
-    match String::from_utf8(std::mem::take(buf)) {
-        Ok(s) => { on_event(LoopEvent::Block(s)); true }
-        Err(e) => {
-            on_event(LoopEvent::InputError(format!("input is not valid UTF-8: {e}")));
-            false
-        }
-    }
+    String::from_utf8(std::mem::take(buf))
+        .map(|s| { on_event(LoopEvent::Block(s)); true })
+        .unwrap_or_else(|e| { on_event(LoopEvent::InputError(format!("input is not valid UTF-8: {e}"))); false })
 }
 
 /// 入力 stream を読みつつ `\0` で分割し、block ごとに `on_event` を呼ぶ。
@@ -177,8 +185,8 @@ fn read_blocks<R: Read>(reader: R, mut on_event: impl FnMut(LoopEvent)) {
             Ok(_) => {
                 let is_nul = buf.last() == Some(&0);
                 if is_nul { buf.pop(); }
-                if (is_nul || !String::from_utf8_lossy(&buf).trim().is_empty())
-                    && !emit_block(&mut buf, &mut on_event) { return; }
+                let should_emit = is_nul || !String::from_utf8_lossy(&buf).trim().is_empty();
+                if should_emit && !emit_block(&mut buf, &mut on_event) { return; }
                 buf.clear();
             }
             Err(e) => {
@@ -188,15 +196,6 @@ fn read_blocks<R: Read>(reader: R, mut on_event: impl FnMut(LoopEvent)) {
         }
     }
     on_event(LoopEvent::InputEnd);
-}
-
-fn spawn_input_reader<R: Read + Send + 'static>(
-    reader: R,
-    proxy: EventLoopProxy<LoopEvent>,
-) {
-    std::thread::spawn(move || {
-        read_blocks(reader, |ev| { let _ = proxy.send_event(ev); });
-    });
 }
 
 /// webview への dispatch を gate する 3 状態の state machine。
@@ -298,54 +297,42 @@ impl StreamState {
         Ok(if self.end_received { Continuation::Done } else { Continuation::Continue })
     }
 
+    /// pipeline が `Awaiting(id)` であることを検証する。
+    fn check_awaiting(&self, id: usize, kind: &str) -> Result<()> {
+        if matches!(self.pipeline, Pipeline::Awaiting(n) if n == id) {
+            Ok(())
+        } else {
+            Err(ipc_protocol_error(&format!(
+                "'{kind}' id {id} does not match pipeline state {:?}", self.pipeline
+            )))
+        }
+    }
+
+    /// block comment (オプション) + content + `\n` を組み立てる。
+    fn format_output(&self, id: usize, content: &str) -> String {
+        let prefix = if self.config.show_block_ids { format_block_comment(id) } else { String::new() };
+        format!("{prefix}{content}\n")
+    }
+
     fn on_ipc(&mut self, msg: &str, wv: &WebView) -> StepResult {
         let parsed: IpcMessage = serde_json::from_str(msg)
             .map_err(|e| ipc_protocol_error(&format!("{e} (raw: {msg})")))?;
         match parsed {
             IpcMessage::Ready => {
-                // 初回 ready で dispatch gate を開く。2 回目以降は冪等。
                 self.pipeline = Pipeline::Idle;
                 self.try_dispatch_next(wv)
             }
             IpcMessage::Svg { id, svg } => {
-                if !matches!(self.pipeline, Pipeline::Awaiting(n) if n == id) {
-                    return Err(ipc_protocol_error(&format!(
-                        "'svg' id {id} does not match pipeline state {:?}",
-                        self.pipeline
-                    )));
-                }
-                // 複数レコード間は \0 で区切る (2 件目以降の直前に \0 を挿入)。
-                let mut output = String::new();
-                if self.config.show_block_ids {
-                    output.push_str(&format_block_comment(id));
-                }
-                output.push_str(&svg);
-                output.push('\n');
-
-                write_to_stdout(&output, self.wrote_any_svg)
+                self.check_awaiting(id, "svg")?;
+                write_output(io::stdout().lock(), &self.format_output(id, &svg), self.wrote_any_svg)
                     .context("failed to write SVG to stdout")?;
                 self.wrote_any_svg = true;
                 self.pipeline = Pipeline::Idle;
                 self.try_dispatch_next(wv)
             }
             IpcMessage::Error { id, error } => {
-                if !matches!(self.pipeline, Pipeline::Awaiting(n) if n == id) {
-                    return Err(ipc_protocol_error(&format!(
-                        "'error' id {id} does not match pipeline state {:?}",
-                        self.pipeline
-                    )));
-                }
-                // stderr への出力。
-                // <!-- {"id": N} -->\nmessage\n
-                // --block-id フラグが指定されている場合のみ ID コメントを含める。
-                let mut msg = String::new();
-                if self.config.show_block_ids {
-                    msg.push_str(&format_block_comment(id));
-                }
-                msg.push_str(&error);
-                msg.push('\n');
-
-                write_to_stderr(&msg, self.wrote_any_error)
+                self.check_awaiting(id, "error")?;
+                write_output(io::stderr().lock(), &self.format_output(id, &error), self.wrote_any_error)
                     .context("failed to write error to stderr")?;
                 self.wrote_any_error = true;
                 self.pipeline = Pipeline::Idle;
@@ -370,20 +357,8 @@ fn dispatch_render(id: usize, content: &str, wv: &WebView) -> anyhow::Result<()>
         .map_err(|e| anyhow::anyhow!("failed to dispatch render({id}) to webview: {e}"))
 }
 
-fn write_to_stdout(content: &str, write_separator: bool) -> io::Result<()> {
-    let mut out = io::stdout().lock();
-    if write_separator {
-        out.write_all(&[0])?;
-    }
-    out.write_all(content.as_bytes())?;
-    out.flush()
-}
-
-fn write_to_stderr(content: &str, write_separator: bool) -> io::Result<()> {
-    let mut out = io::stderr().lock();
-    if write_separator {
-        out.write_all(&[0])?;
-    }
+fn write_output(mut out: impl Write, content: &str, write_separator: bool) -> io::Result<()> {
+    if write_separator { out.write_all(&[0])?; }
     out.write_all(content.as_bytes())?;
     out.flush()
 }
@@ -402,9 +377,9 @@ fn ipc_protocol_error(detail: &str) -> anyhow::Error {
 /// 入力 stream を取り、EOF まで streaming で Mermaid → SVG 変換を行う。
 ///
 /// 成功した SVG は stdout に `\0` 区切りで書き出す。block 単位の render
-/// 失敗は stderr に `Error: mermaid block N: <msg>` の 1 行を出して継続する
-/// (exit 0 で終了)。sekien 自身のセットアップ失敗のみ `Result::Err` (caller の
-/// `main` が anyhow chain で表示して exit 1)。
+/// 失敗は stderr にエラーメッセージを出して継続する (exit 0 で終了)。
+/// sekien 自身のセットアップ失敗のみ `Result::Err` (caller の `main` が
+/// anyhow chain で表示して exit 1)。
 pub fn run_stream<R: Read + Send + 'static>(reader: R, config: &RenderConfig) -> Result<()> {
     #[cfg(target_os = "linux")]
     linux_display::ensure_display()?;
@@ -420,7 +395,7 @@ pub fn run_stream<R: Read + Send + 'static>(reader: R, config: &RenderConfig) ->
     let webview = create_webview(&window, build_html(config), proxy.clone())
         .unwrap_or_else(|e| exit_fatal(e));
 
-    spawn_input_reader(reader, proxy);
+    std::thread::spawn(move || read_blocks(reader, |ev| { let _ = proxy.send_event(ev); }));
 
     let mut state = StreamState::new(config.clone());
     event_loop.run(move |event, _event_loop, control_flow| {
@@ -516,6 +491,48 @@ mod tests {
         let html = build_html(&cfg(None, Some("</script>")));
         assert!(!html.contains("theme: \"</script>\""));
         assert!(html.contains("\\u003c/script\\u003e"));
+    }
+
+    fn cfg_with_config_json(json: &str) -> RenderConfig {
+        RenderConfig {
+            config_json: Some(json.to_string()),
+            ..Default::default()
+        }
+    }
+
+    #[test]
+    fn build_html_no_config_json_uses_empty_spread() {
+        let html = build_html(&cfg(None, None));
+        assert!(html.contains("...{}"));
+    }
+
+    #[test]
+    fn build_html_with_config_json() {
+        let html = build_html(&cfg_with_config_json(r#"{"flowchart":{"curve":"basis"}}"#));
+        assert!(html.contains(r#"...{"flowchart":{"curve":"basis"}}"#));
+    }
+
+    #[test]
+    fn build_html_config_json_closing_script_tag_is_escaped() {
+        let html = build_html(&cfg_with_config_json(r#"{"fontFamily":"a</script>b"}"#));
+        // config_json 内の </script> がエスケープされていること
+        assert!(html.contains("\\u003c/script\\u003e"));
+        // エスケープ前の文字列が config_json として埋め込まれていないこと
+        assert!(!html.contains(r#""a</script>b""#));
+    }
+
+    #[test]
+    fn build_html_config_json_cli_flag_comes_after_spread() {
+        // spread より後に個別フラグが来ることで CLI フラグが優先されることを確認
+        let config = RenderConfig {
+            theme: Some("forest".to_string()),
+            config_json: Some(r#"{"theme":"dark"}"#.to_string()),
+            ..Default::default()
+        };
+        let html = build_html(&config);
+        let spread_pos = html.find("...{").unwrap();
+        let theme_pos  = html.find("theme: \"forest\"").unwrap();
+        assert!(spread_pos < theme_pos, "spread must appear before CLI flag override");
     }
 
     fn parse_ipc(s: &str) -> Result<IpcMessage, serde_json::Error> {
