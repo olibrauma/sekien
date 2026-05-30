@@ -1,30 +1,30 @@
-//! Internal render module. WebView (wry) と event loop (tao) を使って Mermaid
-//! コードを SVG に変換する。sekien crate 内部からのみ使う。
+//! Streaming Mermaid → SVG renderer using wry (WebView) and tao (event loop).
+//! Internal to the sekien crate.
 //!
-//! ## アーキテクチャ: streaming
+//! ## Architecture
 //!
-//! sekien は cat のような長寿命プロセスとして振る舞う。stdin (またはファイル)
-//! を 1 byte ずつ読みながら `\0` 区切りで block を切り出し、到着順に webview
-//! へ dispatch する。
+//! sekien behaves like a long-lived streaming process, similar to cat. It reads
+//! the input splitting on `\0` delimiters, and dispatches each block to the
+//! WebView in arrival order.
 //!
 //! ```text
 //! [reader thread]            [event loop / main]                [WebView / mermaid.js]
 //!   |                              |                                  |
-//!   |-- Block (1 件) ------------->|                                  |
-//!   |                              |-- WebView 起動 (初回のみ) ----->|
+//!   |-- Block (1 item) ----------->|                                  |
+//!   |                              |-- Launch WebView (once) ------->|
 //!   |                              |<-- IPC: ready -------------------|
 //!   |                              |-- evaluate_script: render(N) -->|
 //!   |                              |<-- IPC: svg N or error N --------|
-//!   |                              |-- write SVG to stdout (即 flush) /
+//!   |                              |-- write SVG to stdout (flush)   /
 //!   |                              |   write error to stderr          |
 //!   |-- InputEnd (EOF) ----------->|                                  |
 //!   |                              |-- process::exit(0)
 //! ```
 //!
-//! block の到着が render 完了より早ければ内部 queue に積む。block 単位の
-//! render 失敗で event loop は終了せず、次 block を待つ (continue-on-error)。
-//! EOF を受け取り全 pending を消化したら exit 0。sekien 自身の失敗
-//! (display 初期化、IPC malformed、stdout 書き込み失敗等) のみ exit 1。
+//! Blocks arriving faster than the WebView renders are queued internally.
+//! A per-block render failure does not stop the event loop (continue-on-error).
+//! After EOF and queue drain: exit 0. Only sekien's own failures (display init,
+//! malformed IPC, stdout write failure) trigger exit 1.
 
 use anyhow::{Context, Result};
 use serde::Deserialize;
@@ -43,8 +43,8 @@ use crate::linux_display;
 const MERMAID_JS: &str = include_str!("../assets/mermaid.min.js");
 const HTML_TEMPLATE: &str = include_str!("../assets/render.html");
 
-/// `mermaid.min.js` から build script (`build.rs`) が抽出したバージョン文字列。
-/// 同梱 JS の差し替え時に手動同期が要らないよう実行時バイナリに焼き込む。
+/// Version string extracted from `mermaid.min.js` by `build.rs` at compile time.
+/// Baked into the binary so `--version` stays in sync with the bundled JS.
 pub const MERMAID_VERSION: &str = env!("MERMAID_VERSION");
 
 #[derive(Clone, Default)]
@@ -53,13 +53,12 @@ pub struct RenderConfig {
     pub theme: Option<String>,
     pub look: Option<String>,
     pub show_meta: bool,
-    /// `--config` で渡された JSON オブジェクト文字列（正規化済み）。
-    /// `mermaid.initialize()` に spread される。
+    /// Normalised JSON object string from `--config`, spread into mermaid.initialize().
     pub config_json: Option<String>,
 }
 
-/// event loop で扱う user event。reader thread (Block / InputEnd / InputError)
-/// と webview (Ipc) が生成する。
+/// User events handled by the event loop.
+/// Produced by the reader thread (Block / InputEnd / InputError) and the WebView (Ipc).
 enum LoopEvent {
     Block(String),
     InputEnd,
@@ -67,14 +66,14 @@ enum LoopEvent {
     Ipc(String),
 }
 
-/// webview → sekien の IPC メッセージ。`build_html` が固定する 3 種類:
+/// IPC messages from the WebView. Three variants, fixed by `build_html`:
 ///
-/// - `{"type":"ready"}`: mermaid.initialize() 完了
-/// - `{"type":"svg","id":N,"svg":"..."}`: block N の SVG が出来た
-/// - `{"type":"error","id":N,"error":"..."}`: block N の mermaid 解析が失敗
+/// - `{"type":"ready"}`: mermaid.initialize() complete
+/// - `{"type":"svg","id":N,"svg":"..."}`: block N rendered successfully
+/// - `{"type":"error","id":N,"error":"..."}`: block N failed to parse
 ///
-/// `#[serde(tag = "type")]` で type フィールドを discriminant として読み、
-/// variant ごとのフィールド欠落 / 型不一致 / 未知 type は serde が `Err` で投げる。
+/// The `type` field is the serde discriminant; missing fields, type mismatches,
+/// and unknown variants are all rejected by serde with `Err`.
 #[derive(Deserialize)]
 #[serde(tag = "type", rename_all = "lowercase")]
 enum IpcMessage {
@@ -83,11 +82,10 @@ enum IpcMessage {
     Error { id: usize, error: String },
 }
 
-/// `<script>` 内に安全に埋め込めるよう `<` / `>` を Unicode エスケープする。
+/// Escapes `<` and `>` to Unicode escapes for safe embedding inside `<script>`.
 ///
-/// serde_json は `<` / `>` をエスケープしないため、`</script>` 等が含まれると
-/// script タグを早期終了させて HTML を破壊できる。
-/// 文字列リテラル・JSON オブジェクトいずれの埋め込みにも使う。
+/// serde_json does not escape these characters, so an unescaped `</script>`
+/// would terminate the script tag early. Used for both string literals and JSON objects.
 fn escape_for_script(s: &str) -> String {
     s.replace('<', "\\u003c").replace('>', "\\u003e")
 }
@@ -109,17 +107,16 @@ fn build_html(config: &RenderConfig) -> String {
     })
     .collect();
 
-    // CONFIG_JSON: --config で渡された JSON を spread する。
-    // 未指定時は空オブジェクト `{}` を使う (`...{}` は no-op)。
-    // 個別フラグ (EXTRA_CONFIG) が後に来るので CLI フラグが config file より優先される。
+    // Spread the --config JSON first; CLI flags (EXTRA_CONFIG) follow and take precedence.
+    // Fall back to `{}` (no-op spread) when --config is not set.
     let config_json = config
         .config_json
         .as_deref()
         .map_or_else(|| "{}".to_string(), escape_for_script);
 
-    // `assets/render.html` の各 placeholder を差し替える。
-    // mermaid.min.js / extra_config / config_json はいずれも placeholder 文字列を
-    // 含まないため、ナイーブな `String::replace` で衝突しない (テンプレートエンジン不要)。
+    // Substitute placeholders in the HTML template.
+    // None of mermaid.min.js / extra_config / config_json contain the placeholder
+    // strings, so naive String::replace is collision-free (no template engine needed).
     HTML_TEMPLATE
         .replace("{{MERMAID_JS}}", MERMAID_JS)
         .replace("{{CONFIG_JSON}}", &config_json)
@@ -127,9 +124,9 @@ fn build_html(config: &RenderConfig) -> String {
 }
 
 fn create_window(event_loop: &EventLoopWindowTarget<LoopEvent>) -> anyhow::Result<Window> {
-    // macOS/Windows は実画面に出るので画面外配置で隠す。Linux は Xvfb 内で
-    // 完結するので位置は問題にならないが、1x1 だと GDK アサーションが出る
-    // ため 100x100 に拡大する。
+    // macOS/Windows: place the window off-screen so it is not visible.
+    // Linux: position doesn't matter inside Xvfb, but 1x1 triggers a GDK assertion,
+    // so use 100x100.
     let size = if cfg!(target_os = "linux") { 100 } else { 1 };
     let builder = WindowBuilder::new()
         .with_transparent(true)
@@ -163,8 +160,8 @@ fn create_webview(
         .map_err(|e| anyhow::anyhow!("failed to create webview: {e}"))
 }
 
-/// `buf` を 1 つの `Block` として emit する。UTF-8 invalid なら `InputError` を
-/// emit して `false` を返す (caller が読み込みを打ち切るシグナル)。
+/// Emits `buf` as a single `Block`. On invalid UTF-8, emits `InputError` and
+/// returns `false` to signal the caller to stop reading.
 fn emit_block<F: FnMut(LoopEvent)>(buf: &mut Vec<u8>, on_event: &mut F) -> bool {
     String::from_utf8(std::mem::take(buf))
         .map(|s| {
@@ -179,13 +176,13 @@ fn emit_block<F: FnMut(LoopEvent)>(buf: &mut Vec<u8>, on_event: &mut F) -> bool 
         })
 }
 
-/// 入力 stream を読みつつ `\0` で分割し、block ごとに `on_event` を呼ぶ。
+/// Reads the input stream, splits on `\0`, and calls `on_event` for each block.
 ///
-/// `\0` を見たら現バッファ (空の場合も含む) を `LoopEvent::Block` で emit する。
-/// EOF 時はバッファが非空のときだけ最後の Block を emit する (末尾 `\0` を
-/// 余分な空 block にしないため)。最後に必ず `InputEnd` を 1 回 emit する。
-/// I/O または UTF-8 エラーは `InputError` を emit して即 return する
-/// (`InputEnd` は emit されない)。
+/// On `\0`: emits the current buffer (even if empty) as `Block`.
+/// On EOF: emits the buffer only if non-empty (drops a single trailing `\0`).
+/// Always emits exactly one `InputEnd` at the end.
+/// On I/O or UTF-8 error: emits `InputError` and returns immediately
+/// (`InputEnd` is NOT emitted in this case).
 fn read_blocks<R: Read>(reader: R, mut on_event: impl FnMut(LoopEvent)) {
     let mut reader = BufReader::new(reader);
     let mut buf: Vec<u8> = Vec::new();
@@ -212,15 +209,15 @@ fn read_blocks<R: Read>(reader: R, mut on_event: impl FnMut(LoopEvent)) {
     on_event(LoopEvent::InputEnd);
 }
 
-/// webview への dispatch を gate する 3 状態の state machine。
+/// Three-state machine gating dispatch to the WebView.
 ///
-/// - `NotReady`: webview がまだ mermaid.initialize() 完了前
-/// - `Idle`: webview ready かつ render が走っていない
-/// - `Awaiting(N)`: block N を render 中
+/// - `NotReady`: mermaid.initialize() not yet complete
+/// - `Idle`: WebView ready, no render in flight
+/// - `Awaiting(N)`: rendering block N
 ///
-/// 遷移: `NotReady` → (ready IPC) → `Idle` → (dispatch) → `Awaiting(N)`
-/// → (svg/error IPC) → `Idle`。"ready なのに awaiting でない" のような
-/// 不正な組み合わせを型で disallow する。
+/// Transitions: `NotReady` → (ready IPC) → `Idle` → (dispatch) → `Awaiting(N)`
+/// → (svg/error IPC) → `Idle`. Invalid combinations (e.g. ready but awaiting)
+/// are ruled out at the type level.
 #[derive(Debug)]
 enum Pipeline {
     NotReady,
@@ -228,18 +225,18 @@ enum Pipeline {
     Awaiting(usize),
 }
 
-/// event 処理 1 件分の継続判断。`Err` は致命的失敗。
+/// Result of processing one event. `Err` indicates a fatal failure.
 type StepResult = anyhow::Result<Continuation>;
 
 #[derive(Debug, PartialEq, Eq)]
 enum Continuation {
-    /// event loop を回し続ける
+    /// Keep the event loop running.
     Continue,
-    /// EOF まで処理完了。caller は exit 0 する
+    /// All blocks processed through EOF; caller should exit 0.
     Done,
 }
 
-/// IPC 結果の出力先。`Svg` → stdout、`Error` → stderr に対応する。
+/// Output destination for an IPC result: `Svg` → stdout, `Error` → stderr.
 #[derive(Clone, Copy)]
 enum Channel {
     Stdout,
@@ -255,23 +252,21 @@ impl Channel {
     }
 }
 
-/// 入出力 streaming の進行状態。dispatch の gate は [`Pipeline`] が持つ
-/// (Awaiting は同時に最大 1 件、mermaid.render が単一 webview 上で並列実行
-/// できないため)。
+/// Streaming progress state. Dispatch is gated by [`Pipeline`]
+/// (at most one block in flight, since mermaid.render is not parallelisable).
 struct StreamState {
-    /// 次に reader から受け取った block に割り当てる 1-origin の連番
+    /// 1-origin counter for the next block received from the reader thread.
     next_index: usize,
-    /// dispatch 待ちの block: (block 番号, content)
+    /// Blocks waiting to be dispatched: (block id, content).
     queue: VecDeque<(usize, String)>,
-    /// reader thread から EOF を受け取ったか
+    /// Whether EOF has been received from the reader thread.
     end_received: bool,
-    /// stdout に SVG を既に書き出したか (block 間 separator `\0` の判定)
+    /// Whether any SVG has been written to stdout (used to decide the `\0` separator).
     wrote_any_svg: bool,
-    /// stderr にエラーを既に書き出したか (block 間 separator `\0` の判定)
+    /// Whether any error has been written to stderr (used to decide the `\0` separator).
     wrote_any_error: bool,
-    /// webview の ready 状態と render 中 block の有無
+    /// WebView readiness and whether a render is currently in flight.
     pipeline: Pipeline,
-    /// レンダリング設定
     config: RenderConfig,
 }
 
@@ -288,13 +283,13 @@ impl StreamState {
         }
     }
 
-    /// event を 1 つ処理する。
+    /// Processes one event.
     ///
-    /// 戻り値:
-    /// - `Ok(Continuation::Continue)`: event loop を回し続ける
-    /// - `Ok(Continuation::Done)`: EOF まで処理完了。caller は exit 0
-    /// - `Err(msg)`: sekien 自身の致命的失敗 (InputError / IPC malformed /
-    ///   stdout 書き込み失敗等)。caller は msg を stderr に出して exit 1
+    /// Returns:
+    /// - `Ok(Continue)`: keep the event loop running
+    /// - `Ok(Done)`: all blocks processed; caller should exit 0
+    /// - `Err(msg)`: fatal failure (InputError / malformed IPC / write failure);
+    ///   caller prints `msg` to stderr and exits 1
     fn handle(&mut self, ev: LoopEvent, wv: &WebView) -> StepResult {
         match ev {
             LoopEvent::Block(content) => {
@@ -312,8 +307,8 @@ impl StreamState {
         }
     }
 
-    /// queue から次の 1 件を dispatch する (条件が揃えば)。戻り値の意味は
-    /// [`StreamState::handle`] と同じ。
+    /// Dispatches the next queued block if conditions are met.
+    /// Return value semantics are the same as [`StreamState::handle`].
     fn try_dispatch_next(&mut self, wv: &WebView) -> StepResult {
         if !matches!(self.pipeline, Pipeline::Idle) {
             return Ok(Continuation::Continue);
@@ -323,7 +318,7 @@ impl StreamState {
             self.pipeline = Pipeline::Awaiting(id);
             return Ok(Continuation::Continue);
         }
-        // queue 空、Idle (= awaiting 無し、ready)
+        // Queue empty and Idle — no render in flight.
         Ok(if self.end_received {
             Continuation::Done
         } else {
@@ -331,7 +326,7 @@ impl StreamState {
         })
     }
 
-    /// pipeline が `Awaiting(id)` であることを検証する。
+    /// Verifies that the pipeline is in state `Awaiting(id)`.
     fn check_awaiting(&self, id: usize, kind: &str) -> Result<()> {
         if matches!(self.pipeline, Pipeline::Awaiting(n) if n == id) {
             Ok(())
@@ -343,7 +338,7 @@ impl StreamState {
         }
     }
 
-    /// block comment (オプション) + content + `\n` を組み立てる。
+    /// Builds the output string: optional metadata comment + content + `\n`.
     fn format_output(&self, id: usize, content: &str) -> String {
         let prefix = if self.config.show_meta {
             format_block_comment(id)
@@ -357,7 +352,7 @@ impl StreamState {
         let parsed: IpcMessage = serde_json::from_str(msg)
             .map_err(|e| ipc_protocol_error(&format!("{e} (raw: {msg})")))?;
 
-        // Ready は制御フローのみ。Svg/Error は出力先と内容を取り出して共通処理へ。
+        // Ready is control-flow only. Extract destination and content for Svg/Error.
         let (id, content, ch) = match parsed {
             IpcMessage::Ready => {
                 self.pipeline = Pipeline::Idle;
@@ -391,10 +386,9 @@ fn format_block_comment(id: usize) -> String {
 }
 
 fn dispatch_render(id: usize, content: &str, wv: &WebView) -> anyhow::Result<()> {
-    // serde_json の string 出力は valid な JS 文字列リテラルとしてそのまま使える
-    // (`"` / `\` / 制御文字 / U+2028,U+2029 を escape)。`evaluate_script` は HTML
-    // parser を介さないので `</script>` の追加 escape は不要 (HTML 埋め込み経路の
-    // build_html / js_string_in_html だけが対象)。
+    // serde_json produces a valid JS string literal (escaping `"`, `\`,
+    // control chars, U+2028/U+2029). evaluate_script bypasses the HTML parser,
+    // so `</script>` does not need the extra escaping that build_html requires.
     let content_literal = serde_json::to_string(content).expect("serialize Mermaid block content");
     let js = format!("renderMermaid({id}, {content_literal})");
     wv.evaluate_script(&js)
@@ -409,23 +403,21 @@ fn write_output(mut out: impl Write, content: &str, write_separator: bool) -> io
     out.flush()
 }
 
-/// IPC が想定外の形だった場合の error message を整形する。
+/// Formats an error for unexpected IPC messages.
 ///
-/// WebView から sekien への IPC protocol は本 crate が完全に制御している
-/// (HTML 側のスクリプトも `build_html` で固定) ので、ここに来る場合は内部
-/// バグまたは wry の互換性破壊。silent に exit 0 すると "空の SVG が出た"
-/// という形でユーザーに見えて debug 困難になるため、`Err` で持ち上げて
-/// caller に exit 1 させる (`run_stream` の closure 末端 1 箇所で処理)。
+/// The IPC protocol is fully controlled by this crate (the WebView script is
+/// fixed by `build_html`), so reaching this function indicates an internal bug
+/// or a breaking change in wry. Silently exit 0 would present as "empty SVG"
+/// to the user and be hard to debug, so this is surfaced as a fatal error.
 fn ipc_protocol_error(detail: &str) -> anyhow::Error {
     anyhow::anyhow!("malformed IPC from webview: {detail}")
 }
 
-/// 入力 stream を取り、EOF まで streaming で Mermaid → SVG 変換を行う。
+/// Reads the input stream and converts Mermaid blocks to SVG until EOF.
 ///
-/// 成功した SVG は stdout に `\0` 区切りで書き出す。block 単位の render
-/// 失敗は stderr にエラーメッセージを出して継続する (exit 0 で終了)。
-/// sekien 自身のセットアップ失敗のみ `Result::Err` (caller の `main` が
-/// anyhow chain で表示して exit 1)。
+/// Successful SVGs are written to stdout separated by `\0`. Per-block render
+/// failures are written to stderr and processing continues (exit 0).
+/// Only setup failures return `Result::Err` (displayed by `main` as exit 1).
 pub fn run_stream<R: Read + Send + 'static>(reader: R, config: &RenderConfig) -> Result<()> {
     #[cfg(target_os = "linux")]
     linux_display::ensure_display()?;
@@ -433,10 +425,8 @@ pub fn run_stream<R: Read + Send + 'static>(reader: R, config: &RenderConfig) ->
     let event_loop = EventLoopBuilder::<LoopEvent>::with_user_event().build();
     let proxy = event_loop.create_proxy();
 
-    // WebView の早期初期化 (Pre-warming):
-    // 読み取りスレッドの開始やデータの到着を待たずに、メインスレッドで WebView の
-    // 構築と HTML 読み込みを開始する。これにより 1 ブロック目のレンダリング開始
-    // までのレイテンシを最小化する。
+    // Pre-warm the WebView: start loading the HTML before the reader thread
+    // starts and before any data arrives, minimising latency to the first render.
     let window = create_window(&event_loop).unwrap_or_else(|e| exit_fatal(e));
     let webview = create_webview(&window, build_html(config), proxy.clone())
         .unwrap_or_else(|e| exit_fatal(e));
@@ -464,8 +454,8 @@ pub fn run_stream<R: Read + Send + 'static>(reader: R, config: &RenderConfig) ->
     });
 }
 
-/// `StreamState::handle` の戻り値を解釈して終端を担当する。`Continue` のみ
-/// 通常 return し、`Done` で exit 0、`Err` で exit 1。
+/// Interprets a `StepResult`: returns normally on `Continue`,
+/// exits 0 on `Done`, exits 1 on `Err`.
 fn dispatch_or_exit(result: StepResult) {
     match result {
         Ok(Continuation::Continue) => {}
@@ -474,8 +464,7 @@ fn dispatch_or_exit(result: StepResult) {
     }
 }
 
-/// sekien 自身の致命的失敗時の唯一の exit(1) 経路。
-/// `run_stream` の event loop closure 末端からだけ呼ばれる。
+/// The sole exit(1) path for fatal failures. Called only from the event loop closure.
 fn exit_fatal(e: anyhow::Error) -> ! {
     eprintln!("Error: {e:?}");
     std::process::exit(1);

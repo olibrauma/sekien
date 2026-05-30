@@ -1,55 +1,59 @@
-# sekien — 設計方針
+# sekien — Design
 
-## アーキテクチャの中心思想
+## Core architecture
 
-**sekien バイナリは cat のような streaming プロセス**。stdin (またはファイル) から
-Mermaid を受け取り、`\0` を区切りに 1 block ずつ SVG を stdout へ流す。EOF まで
-生存し、block 単位の失敗は stderr に流して継続する (continue-on-error)。
+**sekien is a streaming process, like cat.** It reads Mermaid from stdin (or a
+file), converts each `\0`-delimited block to SVG, and streams the results to
+stdout. It stays alive until EOF, writing errors to stderr and continuing
+(continue-on-error).
 
-sekien バイナリの動作モードは **1 種類のみ**。単発 CLI 利用も bulk 利用も
-対話利用も、すべて同じ streaming protocol。複数 Mermaid を一括処理したい場合は
-**`\0` (NUL byte) で区切って** stdin に流す。
+sekien has exactly **one operating mode**. Single-shot CLI use, batch use, and
+interactive use all go through the same streaming protocol. Multiple diagrams
+are processed by sending them `\0`-delimited on stdin.
 
-## 区切り文字: `\0` (NUL byte)
+## The `\0` delimiter
 
-### なぜ `\0` か
+### Why `\0`
 
-- **mermaid / SVG content に出現しない**: 両者ともテキスト (printable ASCII + UTF-8)
-  なので NUL バイトは出現しない
-- **Unix tool 慣習の中心**: `find -print0`, `xargs -0`, `sort -z`, `grep -z`,
-  `tr '\0' '\n'`, bash の `read -d ''` 等、"改行を含むかもしれないデータの
-  区切り" として `\0` を使う慣習が確立している。sekien はこの ecosystem に
-  そのまま乗れる
-- **POSIX shell でも書きやすい**: `printf '%s\0' a b c` で複数引数を `\0` 区切り
-  で出力できる
-- **言語横断的に扱いやすい**: Rust (`Read::read_until(0, ...)`)、Python
-  (`bytes.split(b'\\x00')`)、Node (`buffer.split('\\0')`) など、どの言語からも素直
+- **Never appears in Mermaid or SVG content**: both are text (printable ASCII +
+  UTF-8), so NUL bytes cannot occur naturally.
+- **Established Unix convention**: `find -print0`, `xargs -0`, `sort -z`,
+  `grep -z`, `tr '\0' '\n'`, `read -d ''` — NUL as a delimiter for
+  newline-bearing data is a well-known idiom. sekien slots directly into this
+  ecosystem.
+- **Easy to produce in POSIX shell**: `printf '%s\0' a b c` emits
+  `\0`-separated values.
+- **Works in any language**: Rust (`Read::read_until(0, ...)`), Python
+  (`bytes.split(b'\x00')`), Node (`buffer.split('\0')`), etc.
 
-### separator か terminator か
+### Separator, not terminator
 
-stdout の `\0` は **separator**（ブロック間に 1 個）であり **terminator**（各ブロックの末尾に付く）ではない。
-N ブロックの出力に含まれる `\0` は N-1 個で、末尾には付かない。
+`\0` on stdout is a **separator** (one between each pair of blocks), not a
+**terminator** (one after each block). N blocks produce N−1 NUL bytes; there
+is no trailing NUL.
 
-この選択の主な理由は **単一ファイル変換の利便性**:
+The main reason is **single-file conversion convenience**:
 
 ```bash
-sekien input.mmd > output.svg   # 最も多いユースケース
+sekien input.mmd > output.svg   # the most common use case
 ```
 
-terminator 方式だと `output.svg` の末尾に `\0` が残り、後続ツールへの
-受け渡しや SVG ビューアでの表示前に剥がす手間が生じる。separator 方式なら
-1 ブロックの出力は `<svg>\n` で完結し、そのままファイルに書ける。
+With terminator semantics, `output.svg` would end with `\0` and need
+post-processing before being handed to other tools or SVG viewers. With
+separator semantics, a single-block output is simply `<svg>\n` — a clean file.
 
-複数ブロックの出力を受け取る側 (awk の `RS="\0"` など) も、trailing `\0` が
-無いことを自然に扱える (terminator 方式では末尾に余分な空要素が生じる)。
+Consumers of multi-block output (e.g. awk with `RS="\0"`) also handle the
+absence of a trailing NUL naturally; a terminator would produce a spurious
+empty final element.
 
-stdin の末尾 `\0` 1 個を無視するのも同じ思想の裏返しで、Unix ツール
-(`find -print0`, `printf '%s\0' ...`) が自然に付ける trailing NUL を
-"空ブロック" として誤解釈しないための対称的な措置。
+The stdin rule that drops a single trailing `\0` is the symmetric counterpart:
+it prevents Unix tools (`find -print0`, `printf '%s\0' ...`) from accidentally
+producing an empty extra block.
 
-### Unix pipeline 利用例
+### Unix pipeline examples
 
-たいていのユースケースは ".mmd N 個 → .svg N 個" なので shell loop で十分:
+The most common use case — N `.mmd` files to N `.svg` files — is covered by a
+shell loop:
 
 ```bash
 for f in docs/*.mmd; do
@@ -57,9 +61,8 @@ for f in docs/*.mmd; do
 done
 ```
 
-文書 1 つに大量の図がある等で Xvfb 起動コスト (~200ms × N) を抑えたい場合は、
-`\0` 区切り protocol を活かして 1 回の sekien 起動にまとめ、stream を `\0` で
-分けて書き戻せる:
+When Xvfb startup cost (~200 ms × N) matters, bundle all diagrams into one
+sekien invocation:
 
 ```bash
 files=(docs/*.mmd)
@@ -70,133 +73,132 @@ for f in "${files[@]}"; do cat "$f"; printf '\0'; done \
       { svg = a[NR]; sub(/\.mmd$/, ".svg", svg); print > svg }'
 ```
 
-`-0` `-z` `RS="\0"` 等の Unix tool 機構が直接使えるため、delimiter 変換が不要。
+The `-0` / `-z` / `RS="\0"` flags in standard Unix tools make this pipeline
+work without any delimiter conversion.
 
-## 内部実装
+## Internals
 
-### streaming の要点
+### Streaming design
 
-- **reader と event loop の分離**: stdin の blocking read は別 thread に置き、
-  EventLoopProxy 経由で event を送る。tao の event loop は main thread に
-  pinning されており、blocking read を直接書けないため
-- **queue 経由の dispatch**: input は webview の render より速く到着しうるので、
-  StreamState 内に `VecDeque<(id, content)>` を持つ。awaiting (= 1 件だけ
-  render 中) と webview_ready の両方が揃ったときに queue の先頭を pop
-- **block id は 1-origin**: `next_index` から消費。webview の `mermaid.render`
-  には `d{id}` の DOM id として渡す。`--meta` 時に出す N もこの 1-origin
-- **stdout の即時 flush**: `io::stdout().lock()` + `flush()` で SVG ごとに
-  pipe へ push する。これにより `sekien | head -1` のような pipeline でも
-  最初の SVG が即座に下流に届く
-- **per-block 失敗は exit code に出さない**: 失敗時も pipeline を Idle に
-  戻して queue 消化を続ける。`exit 1` するのは reader I/O 失敗、malformed
-  IPC、stdout write 失敗、display 初期化失敗等の sekien 自身の障害のみ
+- **Reader/event-loop separation**: blocking stdin reads run on a dedicated
+  thread and send events via `EventLoopProxy`. The tao event loop is pinned to
+  the main thread and cannot block.
+- **Queue-based dispatch**: blocks arrive faster than the WebView can render,
+  so `StreamState` holds a `VecDeque<(id, content)>`. The next block is
+  dispatched only when the pipeline is `Idle` (no render in flight).
+- **1-origin block IDs**: assigned from `next_index`. The WebView receives each
+  block as `renderMermaid(id, ...)` and the DOM element is named `d{id}`,
+  preventing silent misattribution of results.
+- **Per-block stdout flush**: `io::stdout().lock()` + `flush()` on every SVG
+  so that `sekien | head -1` receives the first SVG immediately.
+- **Per-block errors do not exit**: on failure, the pipeline returns to `Idle`
+  and the queue continues draining. Exit 1 is reserved for sekien's own
+  failures (reader I/O error, malformed IPC, stdout write failure, display init).
 
-### イベントループ (tao)
+### Event loop (tao)
 
-イベントループは tao を使う。winit より Linux サポートが充実しているため。
+tao is preferred over winit for its stronger Linux support.
 
-ウィンドウサイズと配置は OS ごとに事情が異なる:
+Window size and placement differ by OS:
 
-- **macOS / Windows**: 実画面にウィンドウが描画される。ユーザーから見えないよう
-  に画面外 (`-10000, -10000`) に配置する。サイズは 1x1 で問題ない
-- **Linux**: Xvfb の仮想 framebuffer 内で完結する (実画面が存在しない) ため、
-  画面外配置は不要。一方、GTK は 1x1 のウィンドウサイズで GDK のアサーション
-  エラーを起こすため、`#[cfg(target_os = "linux")]` で 100x100 に拡大する
+- **macOS / Windows**: the window renders on the real screen, so it is placed
+  off-screen at (−10000, −10000). Size 1×1 is sufficient.
+- **Linux**: rendering happens entirely inside Xvfb (no real screen), so
+  placement is irrelevant. GTK raises an assertion at 1×1, so the window is
+  sized to 100×100 under `#[cfg(target_os = "linux")]`.
 
-`event_loop.run()` は `-> !` で呼び出し元に戻らないため、`run_stream` 内部で
-`std::process::exit` を呼んで終了する。これは sekien バイナリの 1 回の起動内で
-完結する設計なので問題にならない。
+`event_loop.run()` never returns (`-> !`), so `run_stream` calls
+`std::process::exit` directly. This is safe because sekien is a single-shot
+binary.
 
-### Linux display 解決
+### Linux display resolution
 
-`run_stream` の冒頭、GTK 初期化より前に display backend を解決する
-(`linux_display::ensure_display`)。
+`ensure_display()` (in `linux_display.rs`) is called at the start of
+`run_stream`, before GTK is initialised.
 
-#### GDK backend は常に X11 を強制
+#### Why X11 is forced
 
-`GDK_BACKEND=x11` を必ずセットする。後段で起動する Xvfb は X server なので、
-GDK にも X11 backend を選ばせる必要があるため。これを指定しないと Wayland
-セッションでは GDK が `$WAYLAND_DISPLAY` を優先し、`DISPLAY` で指した Xvfb を
-無視して Wayland コンポジタに接続してしまう。
+`GDK_BACKEND=x11` is always set. Xvfb is an X server, so GDK must use the X11
+backend. Without this, on a Wayland session GDK would prefer `$WAYLAND_DISPLAY`
+and ignore the `$DISPLAY` that points to Xvfb.
 
-#### Display の確保
+#### Why Xvfb is always used
 
-`$DISPLAY` の有無に関わらず、常に内部で Xvfb を spawn して `$DISPLAY` を上書きする。
+`$DISPLAY` is always overwritten with a freshly spawned Xvfb, even if one
+already exists.
 
-Xvfb (in-memory framebuffer) を使う理由は、**実画面に描画させないため**。X11
-セッションや Wayland セッション (Xwayland 経由) で実画面に描画すると、
-レンダリング中の数百ミリ秒だけウィンドウが画面に flash してしまう。Xvfb は
-そもそも画面を持たないため flash しない。Linux のセッション種別に関わらず
-一律 Xvfb に統一することで、環境差を吸収して常に invisible なレンダリングを
-保証する。
+Rendering via Xwayland or a real X server causes the window to flash on-screen
+for the duration of the render (typically hundreds of milliseconds). Xvfb has
+no screen, so it never flashes. Using Xvfb unconditionally makes the behaviour
+independent of the desktop environment.
 
-Xvfb は `-displayfd 1 -terminate -screen 0 100x100x24 -nolisten tcp` で起動し、
-Xvfb 自身が空き display 番号を選んで stdout に書き出すのを待つ
-(`-displayfd` は X server が client 受付可能になったタイミングで発火する)。
-socket file の存在だけでは server 完全 ready の前に GTK が接続を試みて失敗する
-ため、このシグナルを使う。
+Xvfb is launched with `-displayfd 1 -terminate -screen 0 100x100x24
+-nolisten tcp`. The `-displayfd` mechanism writes the chosen display number to
+stdout once the X server is ready to accept clients — polling the socket file
+alone is insufficient, as GTK may connect before the server is fully
+initialised. (`-terminate` shuts Xvfb down automatically when sekien exits.)
 
-`-terminate` により sekien 終了時に Xvfb も自動的に停止するため、明示的な
-プロセス管理は不要。
+For batch processing (multiple `\0`-delimited blocks), a single sekien
+invocation means **one Xvfb** regardless of block count. The startup cost is
+amortised over all blocks.
 
-複数 block を一括処理する場合でも、**1 回の sekien 起動につき Xvfb は 1 つ**。
-N blocks 処理しても Xvfb 起動コストは 1 回分のみ。これが `\0` 区切り protocol
-の主要な性能上のメリット。
+#### Future: GTK4 headless
 
-#### GTK4 headless への将来的な移行
+GTK 4.10+ supports `GDK_BACKEND=headless`, which eliminates the need for any
+display server. wry 0.55 is pinned to GTK3/webkit2gtk-4.x with no GTK4 feature
+flag; once wry adds GTK4 support, the Xvfb path can be replaced with headless.
 
-GTK 4.10+ で `GDK_BACKEND=headless` が利用可能になり、display server 自体が
-不要になる。ただし wry 0.55 は GTK3 / webkit2gtk-4.x にハードコードされており、
-GTK4 を選ぶ feature flag が無い。wry の GTK4 対応後、Xvfb 経路を headless に
-差し替え可能。
+## Performance
 
-## 性能特性
+Wall time for one invocation is the sum of:
 
-1 起動の wall time は次のコストの合計:
+- **Display init**: Linux — Xvfb launch + GTK init; macOS/Windows — OS-native
+  WebView init only.
+- **mermaid.js load**: evaluation of the bundled `mermaid.min.js`.
+- **Render**: depends on diagram complexity (tens to hundreds of ms for the
+  diagrams in `util/bench/diagrams/`).
 
-- **display 初期化**: Linux は Xvfb 起動 + GTK 初期化、macOS / Windows は OS
-  ネイティブ WebView の初期化のみ
-- **mermaid.js load**: HTML テンプレートに同梱した `mermaid.min.js` の評価
-- **render**: 図の複雑さに依存 (`util/bench/diagrams/` の図で数十〜数百 ms)
+For current measurements see [README.md — vs mmdc](../../README.md#vs-mmdc).
+The ratio varies by OS, architecture, and diagram complexity, but **startup
+cost dominates render cost**. This is the motivation for the `\0`-delimited
+protocol: bundling multiple blocks into one invocation amortises the startup
+overhead.
 
-直近の実測値は [README.md - mmdc との比較](../../README.md#mmdc-との比較) を参照。
-内訳の比率は OS / arch / 図の複雑さで変動するが、**起動コストが render コストに
-対して支配的** な傾向は変わらない。これが `\0` 区切り protocol で複数 block を
-1 起動に束ねる設計の根拠。
+## Why this design
 
-## なぜこの設計か
+### Why single-mode streaming
 
-### なぜ sekien は単一 mode なのか
+Reasons for choosing a single streaming mode with no mode-switching flags:
 
-モード切替フラグを持たず、stdin を `\0` 区切りで読む streaming プロセスに
-した理由:
-- sekien の "顔" が 1 つに保たれる (`--help` も簡潔)
-- ユーザーが学ぶことが少ない
-- 単発 CLI 利用も bulk 利用も対話利用も同じ interface
-- "1 input → 1 output (もしくは 1 error)" が per-block で一貫する
+- sekien presents one face to users (`--help` is concise).
+- Less to learn.
+- Single-shot, batch, and interactive use share the same interface.
+- "1 input → 1 output (or 1 error)" is consistent at the per-block level.
 
-`\0` 区切り + streaming protocol によって、interface 数を増やさずに bulk
-処理と対話処理を可能にしている。
+The `\0`-delimited streaming protocol delivers batch and interactive processing
+without adding interface complexity.
 
-### なぜ per-block 失敗で exit せず継続するのか (continue-on-error)
+### Why continue-on-error
 
-旧設計は "1 block でも失敗したら全 SVG を捨てて exit 1"。これを streaming +
-continue-on-error に変えた理由:
+The old design exited 1 on the first failure. Reasons for switching to
+streaming continue-on-error:
 
-- **bulk 入力では一部失敗が日常**: 20 個の Mermaid を処理する時、1 個 typo が
-  あるだけで残り 19 個も捨てるのは過剰
-- **対話モードとの整合**: 対話的に使うとき、1 件 typo したら sekien が die する
-  と再起動コスト (Xvfb / WebView 初期化) を毎回払うことになる。streaming で
-  生き残ってくれれば修正版をすぐ流し直せる
-- **failure 情報の粒度**: 集約 exit code 1 は "何が失敗したか" の情報を持たない。
-  per-block で stderr に出せば、caller は具体的に block N が壊れたことを知れる
-- **shell pipeline での扱いやすさ**: `sekien | extract-svgs.sh` のような構成で
-  上流が部分的に失敗しても下流に成功分だけが流れる。`grep` 等の Unix ツール
-  と同じ "stream を加工し続ける" モデル
+- **Partial failure is normal in batch use**: with 20 diagrams, one typo should
+  not discard the other 19.
+- **Interactive mode consistency**: a typo that kills sekien means paying the
+  Xvfb/WebView startup cost again for the corrected version. Staying alive
+  allows immediate retry.
+- **Failure granularity**: an aggregate exit code 1 says nothing about which
+  block failed. Per-block stderr output lets callers identify exactly which
+  block N was broken.
+- **Unix pipeline composability**: in `sekien | extract-svgs.sh`, only the
+  successful SVGs reach downstream. This matches the "keep processing the
+  stream" model of tools like `grep`.
 
-### なぜ Linux で Xvfb を常時起動するのか
+### Why Xvfb is always used on Linux
 
-詳細は前述の "Linux display 解決" 節を参照。要約:
-- 実画面に描画させると数百ミリ秒のウィンドウ flash が発生する (X11 / Xwayland いずれも)
-- Xvfb は in-memory framebuffer で画面が存在しないため flash しない
-- Linux のセッション種別に依存せず invisible なレンダリングを保証できる
+- Rendering on the real screen (X11 or Xwayland) causes a window to flash
+  for the duration of the render.
+- Xvfb has no screen, so there is never any visible flash.
+- Using Xvfb unconditionally guarantees invisible rendering regardless of the
+  Linux session type.

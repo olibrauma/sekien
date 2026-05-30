@@ -3,8 +3,8 @@ use std::env;
 use std::fs;
 use std::path::PathBuf;
 
-/// `assets/mermaid.min.js` の期待される SHA256 ハッシュ値。
-/// 手動更新時に改ざんや事故を防ぐための完全性検証。
+/// Expected SHA256 of `assets/mermaid.min.js`.
+/// Guards against accidental or malicious modifications during manual updates.
 const EXPECTED_MERMAID_SHA: &str =
     "217b66ef4279c33c141b4afe22effad10a91c02558dc70917be2c0981e78ed87";
 
@@ -18,7 +18,7 @@ fn main() {
 
     let bytes = fs::read(&mermaid_path).unwrap_or_else(|e| panic!("read {mermaid_path:?}: {e}"));
 
-    // 完全性検証 (SHA256)
+    // Integrity check (SHA256)
     let actual_sha = format!("{:x}", Sha256::digest(&bytes));
     if actual_sha != EXPECTED_MERMAID_SHA {
         panic!(

@@ -1,135 +1,132 @@
-# sekien — Mermaid Drawer
+# sekien
 
-Mermaid コードを SVG に変換する CLI ツール。OS ネイティブ WebView を使うため、
-Chromium をバンドルする [`mmdc`](https://github.com/mermaid-js/mermaid-cli) より
-軽量・高速・小さい。
+Sekien draws Mermaids natively.
 
-## インストール
+Mermaid → SVG on the command line, using the OS-native WebView instead of
+bundling Chromium — lighter, faster, and far smaller than
+[`mmdc`](https://github.com/mermaid-js/mermaid-cli).
+
+## Install
 
 ```bash
 cargo install sekien
 ```
 
-Linux の場合はビルドに WebKitGTK 関連のパッケージが必要です（Ubuntu 例）:
+On Linux, WebKitGTK development packages are required (Ubuntu example):
 
 ```bash
 sudo apt install libwebkit2gtk-4.1-dev libgtk-3-dev
 ```
 
-## 使い方
+## Usage
 
 ```bash
-# .mmd ファイル → SVG (stdout)
+# File argument → SVG on stdout
 sekien diagram.mmd > diagram.svg
 
-# stdin → SVG (stdout)
+# stdin → SVG on stdout
 cat diagram.mmd | sekien > diagram.svg
 
-# 複数 Mermaid を 1 回の起動で処理 (\0 区切り)
+# Multiple diagrams in one invocation (\0-delimited)
 printf 'graph LR\n  A --> B\0graph TD\n  X --> Y' | sekien > out.bin
 ```
 
-sekien は cat のような streaming プロセス。stdin を EOF まで読み続け、各 block
-の SVG を即座に stdout に流す。block 単位の Mermaid 解析エラーは stderr に
-エラーメッセージを出力して継続する（continue-on-error）。
+Sekien is a streaming process, like cat. It reads stdin until EOF, flushing each
+SVG to stdout as soon as it is ready. Mermaid parse errors are written to stderr
+and processing continues (continue-on-error).
 
-### 対話モード
+### Interactive mode
 
-terminal から直接起動して 1 block ずつ入力できる:
+Launch directly from a terminal and enter diagrams one block at a time:
 
 ```text
 $ sekien
 graph LR
   A --> B
 ^@
-<svg がその場で出る>
+<svg appears here>
 ^D
 $
 ```
 
-`Ctrl + @` が NUL byte (`\0`) を入力する手段、`Ctrl + D` が EOF を投げて
-sekien を終了させる手段。
+`Ctrl+@` sends a NUL byte (`\0`) to end a block; `Ctrl+D` sends EOF to exit.
 
-## オプション
+## Options
 
-| フラグ | 説明 |
+| Flag | Description |
 |---|---|
-| `--font <name>` | フォント (CSS font-family 形式) |
-| `--theme <name>` | mermaid.js テーマ |
-| `--look <name>` | 描画スタイル |
-| `--config <file>` | mermaid.initialize() 設定 JSON ファイル |
-| `--meta` | 各出力の前にメタデータ (`<!-- {"id": N} -->`) を付与 |
-| `--version`, `-v` | バージョン表示 |
-| `--help`, `-h` | ヘルプ表示 |
+| `--font <name>` | Font family (CSS font-family syntax) |
+| `--theme <name>` | mermaid.js theme |
+| `--look <name>` | Diagram style |
+| `--config <file>` | JSON config file for mermaid.initialize() |
+| `--meta` | Prepend `<!-- {"id": N} -->` metadata before each output block |
+| `--version`, `-v` | Print version |
+| `--help`, `-h` | Print help |
 
-よく使うオプションはシェルの alias に書いておくと毎回の入力を省ける:
+Persist common options in a shell alias:
 
 ```bash
 alias sekien='sekien --config ~/.config/sekien.json'
 ```
 
-## 動作環境
+## Platforms
 
-| OS | 要件 |
+| OS | Requirement |
 |---|---|
-| macOS | ディスプレイ接続が必要 (WKWebView) |
-| Windows | ディスプレイ接続が必要 (WebView2) |
-| Linux | Xvfb (内部で自動起動。画面/セッション不問) |
+| macOS | Display required (WKWebView) |
+| Windows | Display required (WebView2) |
+| Linux | Xvfb (launched internally — no session or display needed) |
 
-### macOS: Gatekeeper の警告
+### macOS: Gatekeeper warning
 
-GitHub Releases からダウンロードしたバイナリはコード署名されていないため、
-初回実行時に Gatekeeper がブロックする場合がある。その場合は以下のコマンドで
-quarantine 属性を解除する:
+Binaries downloaded from GitHub Releases are unsigned. If Gatekeeper blocks the
+first launch, remove the quarantine attribute:
 
 ```bash
 xattr -d com.apple.quarantine sekien
 ```
 
-または System Settings → Privacy & Security → 「このまま開く」でも許可できる。
+Alternatively, allow it via System Settings → Privacy & Security.
 
-### Linux: Xvfb が必須
+### Linux: Xvfb required
 
-sekien は Linux では実行のたびに内部で Xvfb を起動し、その仮想 display 上で
-描画する。デスクトップ環境 (X11 / Wayland / Xwayland) や `$DISPLAY` の値は
-一切参照しない。
+sekien launches its own Xvfb on every run and renders into that virtual display.
+The desktop environment (X11 / Wayland / Xwayland) and `$DISPLAY` are ignored.
 
-## mmdc との比較
+## vs mmdc
 
-OS ネイティブの WebView を活用することで、標準的な `mmdc` (Puppeteer/Chromium
-ベース) に比べ軽量・高速に動作します。
+By using the OS-native WebView rather than bundling Chromium, sekien is
+significantly lighter than `mmdc`.
 
-- 計測値は `util/bench/` の 3 図の中央値。mmdc 11.14.0 / sekien 0.1.0 (mermaid.js 11.14.0)
-- Max RSS は Xvfb/WebKit/Chromium を含む全子プロセスの合計最大値 (`util/bench/bench.sh` 参照)
+- Figures are the median of the 3 diagrams in `util/bench/`. mmdc 11.14.0 / sekien 0.1.0 (mermaid.js 11.14.0)
+- Max RSS includes all child processes (Xvfb/WebKit/Chromium) — see `util/bench/bench.sh`
 
-### バイナリサイズ
+### Binary size
 
-| platform | sekien | mmdc | Advantage |
+| Platform | sekien | mmdc | Advantage |
 |---|---|---|---|
-| Mac | **~10 MB** | 330 MB | 97% 小さい |
-| Linux | **4.8 MB** | 401 MB | 99% 小さい |
+| Mac | **~10 MB** | 330 MB | 97% smaller |
+| Linux | **4.8 MB** | 401 MB | 99% smaller |
 
-### 実行速度
+### Speed
 
-| platform | sekien | mmdc | Advantage |
+| Platform | sekien | mmdc | Advantage |
 |---|---|---|---|
-| Mac | **~360 ms** | ~1.1 s | **67% 速い** |
-| Linux | **~1.1 s** | ~1.6 s | **31% 速い** |
+| Mac | **~360 ms** | ~1.1 s | **67% faster** |
+| Linux | **~1.1 s** | ~1.6 s | **31% faster** |
 
-### メモリ使用量
+### Memory
 
-| platform | sekien | mmdc | Advantage |
+| Platform | sekien | mmdc | Advantage |
 |---|---|---|---|
-| Mac | **~90 MB** | ~690 MB | **87% 軽い** |
-| Linux | **~430 MB** | ~630 MB | **32% 軽い** |
+| Mac | **~90 MB** | ~690 MB | **87% less** |
+| Linux | **~430 MB** | ~630 MB | **32% less** |
 
-## 構成
+## Internals
 
-詳細なプロトコル仕様は [protocol.md](util/docs/protocol.md)、設計方針は
-[DESIGN.md](util/docs/DESIGN.md) を参照。
+Protocol spec: [protocol.md](util/docs/protocol.md). Design rationale: [DESIGN.md](util/docs/DESIGN.md).
 
-**wry** が提供する OS ネイティブ WebView を起動し、mermaid.js を使って
-Mermaid コードを SVG に変換する。イベントループとウィンドウ管理は **tao**。
+**wry** provides the OS-native WebView; **tao** handles the event loop and window management.
 
 ## License
 

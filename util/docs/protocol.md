@@ -1,53 +1,61 @@
 # sekien Streaming Protocol Specification (v1.0)
 
-この文書は、`sekien` バイナリの標準入出力（stdin, stdout, stderr）における通信規約を定義する。
+This document defines the stdin, stdout, and stderr communication contract
+for the `sekien` binary.
 
-## 1. 構文定義 (EBNF)
+## 1. Syntax (EBNF)
 
 ```ebnf
-(* セパレータ: NUL バイト *)
+(* Separator: NUL byte *)
 separator     ::= "\0"
 
-(* ストリーム定義: 0個以上のブロックの連続 *)
+(* Stream definitions: zero or more blocks in sequence *)
 stdin         ::= [ mermaid_text { separator mermaid_text } ] [ separator ]
 stdout        ::= [ stdout_unit { separator stdout_unit } ]
 stderr        ::= [ stderr_unit { separator stderr_unit } ]
 
-(* 構成要素: 各コンテンツは改行で終端される。ブロック間は separator で区切られる *)
+(* Units: each content is newline-terminated; units are separated by separator *)
 stdout_unit   ::= [ json_meta ] svg_text "\n"
 stderr_unit   ::= [ json_meta ] error_message "\n"
 
-(* メタデータ定義: JSON オブジェクトを XML コメント形式でラップし、改行で終端 *)
+(* Metadata: a JSON object wrapped in an XML comment, newline-terminated *)
 json_meta     ::= "<!-- " json_object " -->\n"
 json_object   ::= ? JSON object (RFC 8259) ?
 
-(* コンテンツ定義: separator (\0) を含まない任意の UTF-8 文字列 *)
+(* Content: any UTF-8 string that does not contain separator (\0) *)
 mermaid_text  ::= { character - separator }
 svg_text      ::= { character - separator }
 error_message ::= { character - separator }
 
-(* 文字定義: 任意の有効な UTF-8 文字 *)
+(* Character: any valid UTF-8 character *)
 character     ::= ? any UTF-8 character ?
 ```
 
-## 2. メタデータのデータ構造 (json_object)
+## 2. Metadata structure (json_object)
 
-`json_meta` に埋め込まれる `json_object` は、現在は以下の構造を持つ。
+The `json_object` embedded in `json_meta` currently has the following structure.
 
-*   **id** (number): 入力順に基づく 1-origin のブロック番号。
+- **id** (number): 1-origin block number based on input order.
 
-例: `{"id": 1}`
+Example: `{"id": 1}`
 
-将来的に、レンダリング日時や mermaid.js の詳細なバージョン情報などが追加される可能性がある。
+Additional fields (render timestamp, mermaid.js version details, etc.) may be
+added in future versions.
 
-## 3. 通信の性質
+## 3. Protocol properties
 
-1.  **逐次処理（Streaming）**:
-    `sekien` は `stdin` から `separator` を受け取るまで入力を読み込み、1 ブロック完成するごとに即座にレンダリングを開始する。結果が準備でき次第、`stdout` または `stderr` に出力する。
-2.  **エラー継続（Continue-on-error）**:
-    特定のブロックのレンダリングに失敗してもプロセスは終了せず、次のブロックの入力を待ち続ける。エラー情報は `stderr` に書き出される。
-3.  **末尾セパレータの扱い**:
-    `stdin` の末尾（EOF 直前）にある 1 つの `separator` は無視される。これにより、Unix 慣習的な `find -print0` 等の出力をそのまま処理できる。
-4.  **終了ステータス**:
-    *   `0`: `stdin` の EOF に達し、すべてのブロックの処理（成否不問）を完了した。
-    *   `1`: プロセス自身の致命的な失敗（メモリ不足、ディスプレイ初期化失敗、I/O エラー等）。
+1. **Streaming**: sekien reads stdin until it receives a `separator`, then
+   immediately begins rendering the completed block. Results are written to
+   `stdout` or `stderr` as soon as they are ready.
+
+2. **Continue-on-error**: If rendering a block fails, the process does not
+   exit. The error is written to `stderr` and sekien continues waiting for
+   the next block.
+
+3. **Trailing separator**: A single `separator` immediately before EOF on
+   `stdin` is ignored. This allows the output of tools like `find -print0`
+   to be piped directly into sekien.
+
+4. **Exit status**:
+   - `0`: EOF reached; all blocks processed (regardless of per-block success or failure).
+   - `1`: Fatal failure of sekien itself (out of memory, display init failure, I/O error, etc.).

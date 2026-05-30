@@ -1,9 +1,10 @@
-# sekien CLI 仕様 (v1.0)
+# sekien CLI Specification (v1.0)
 
-この文書は `sekien` コマンドの引数・オプション・環境変数・終了コードを定義する。
-入出力の通信規約は [protocol.md](protocol.md) を参照。
+This document defines the arguments, options, exit codes, and non-obvious
+behaviour of the `sekien` command.
+For the stdin/stdout/stderr wire format, see [protocol.md](protocol.md).
 
-## 1. 構文 (Synopsis)
+## 1. Synopsis
 
 ```
 sekien [options] [<file>]
@@ -11,48 +12,48 @@ sekien --version | -v
 sekien --help    | -h
 ```
 
-## 2. 引数
+## 2. Arguments
 
-### `<file>` (省略可)
+### `<file>` (optional)
 
-読み込む Mermaid ファイルのパス。省略時は stdin を読む。
+Path to a Mermaid file to read. If omitted, stdin is read instead.
 
-- ファイルと stdin は排他。`<file>` を指定した場合、stdin は参照されない。
-- 2 つ以上指定した場合はエラーメッセージを stderr に出力して **exit 1**。
+- `<file>` and stdin are mutually exclusive. When a file is given, stdin is ignored.
+- Specifying two or more files prints an error to stderr and exits with **exit 1**.
 
-## 3. オプション
+## 3. Options
 
-オプションは任意の順序で指定できる。`<file>` の前後どちらでも構わない。
+Options may appear in any order, before or after `<file>`.
 
 ### `--font <font>`
 
-図中のテキストに使うフォントファミリー。CSS の `font-family` と同じ書式を受け付ける。
+Font family for diagram text. Accepts CSS `font-family` syntax.
 
-- デフォルト: mermaid.js の既定値
+- Default: mermaid.js default
 
 ### `--theme <theme>`
 
-mermaid.js のテーマ。以下の値を受け付ける:
+mermaid.js theme. Accepted values:
 
 `default` | `base` | `dark` | `forest` | `neutral` | `neo` | `neo-dark` | `redux` | `redux-dark` | `null`
 
-- デフォルト: mermaid.js の既定値 (`default`)
-- 値の妥当性検証は行わない。不正な値は mermaid.js 側でフォールバックされる。
+- Default: mermaid.js default (`default`)
+- Values are not validated; invalid values are silently ignored or produce a fallback in mermaid.js.
 
 ### `--look <look>`
 
-描画スタイル。以下の値を受け付ける:
+Diagram style. Accepted values:
 
 `classic` | `handDrawn` | `neo`
 
-- デフォルト: mermaid.js の既定値
-- `handDrawn` は flowchart / graph 型のみ対応
-- 値の妥当性検証は行わない。
+- Default: mermaid.js default
+- `handDrawn` is supported for flowchart/graph diagrams only.
+- Values are not validated.
 
 ### `--config <file>`
 
-`mermaid.initialize()` に渡す設定を JSON ファイルで指定する。
-ファイルはトップレベルが JSON オブジェクトでなければならない。
+JSON config file for `mermaid.initialize()`.
+The file must be a top-level JSON object.
 
 ```json
 {
@@ -62,68 +63,69 @@ mermaid.js のテーマ。以下の値を受け付ける:
 }
 ```
 
-設定できる項目の一覧は
-[mermaid.js 設定スキーマ](https://mermaid.js.org/config/schema-docs/config.html) 参照。
+For the full list of available keys, see the
+[mermaid.js config schema](https://mermaid.js.org/config/schema-docs/config.html).
 
-- CLI フラグ (`--theme` 等) は config ファイルの同名キーより**優先**される。
-- `startOnLoad` / `htmlLabels` は sekien の動作に必須のため、config ファイルの値に
-  関わらず常に上書きされる。
-- `securityLevel` のデフォルトは `"strict"`。config ファイルで上書き可能。
+- CLI flags (`--theme`, etc.) override the same key in the config file.
+- `startOnLoad` and `htmlLabels` are always overridden by sekien (required for correct operation).
+- `securityLevel` defaults to `"strict"` but can be overridden via the config file.
 
 ### `--meta`
 
-stdout (SVG) と stderr (エラー) の各出力ブロックの先頭に
-`<!-- {"id": N} -->` を付与する。N は入力の 1-origin ブロック番号。
+Prepends `<!-- {"id": N} -->` before each stdout (SVG) and stderr (error) output.
+N is the 1-origin block number from the input.
 
-値をとらないフラグ。将来的にメタデータのフィールドが拡張される可能性がある。
+Value-less flag. The metadata fields may be extended in future versions.
 
 ### `--version`, `-v`
 
-バージョン情報を stdout に出力して **exit 0**。出力形式:
+Prints version information to stdout and exits **0**. Output format:
 
 ```
 sekien <semver> (mermaid.js <semver>)
 ```
 
-他のオプションより先に現れた場合も後に現れた場合も、それより前に指定された
-オプションは無視され、このコマンドが優先される。
+If `--version` or `--help` is encountered during argument parsing, all
+previously accumulated options are discarded and only the corresponding
+command runs.
 
 ### `--help`, `-h`
 
-ヘルプテキストを stdout に出力して **exit 0**。
-`--version` と同様、他のオプションを無視してこのコマンドが優先される。
+Prints help text to stdout and exits **0**.
+Same early-exit behaviour as `--version`.
 
-## 4. 環境変数
+## 4. Environment variables
 
-環境変数によるデフォルト設定はサポートしない。
-永続的なデフォルトが必要な場合はシェルエイリアスで代替する:
+Default configuration via environment variables is not supported.
+For persistent defaults, use a shell alias instead:
 
 ```bash
 alias sekien='sekien --config ~/.config/sekien.json'
 ```
 
-## 5. 終了コード
+## 5. Exit codes
 
-| コード | 条件 |
+| Code | Condition |
 |---|---|
-| `0` | stdin の EOF に達し、全ブロックの処理（成否不問）を完了した。または `--help` / `--version` を実行した。 |
-| `1` | 不正な引数・オプション。sekien 自身の致命的失敗（display 初期化失敗、malformed IPC、I/O エラー等）。 |
+| `0` | EOF reached; all blocks processed (regardless of per-block success or failure). Also: `--help` / `--version` executed. |
+| `1` | Invalid argument or option. Fatal failure of sekien itself (display init, malformed IPC, I/O error, etc.). |
 
-個々の Mermaid ブロックの解析失敗は exit 1 にならない。エラーメッセージを
-stderr に出力して次のブロックの処理を続ける（continue-on-error）。
-詳細は [protocol.md §3](protocol.md#3-通信の性質) 参照。
+Per-block Mermaid parse failures do not produce exit 1. The error message is
+written to stderr and processing continues (continue-on-error).
+See [protocol.md §3](protocol.md#3-protocol-properties) for details.
 
-## 6. 制約・非自明な挙動
+## 6. Constraints and non-obvious behaviour
 
-- **ファイルは最大 1 つ**: 複数ファイルはエラー。複数ファイルを処理したい場合は
-  シェルループか NUL 区切りで stdin に渡す。
+- **At most one file**: Multiple files are an error. To process multiple files,
+  use a shell loop or NUL-delimited stdin.
   ```bash
   for f in *.mmd; do sekien "$f" > "${f%.mmd}.svg"; done
   printf '%s\0' *.mmd | xargs -0 cat | sekien
   ```
-- **`--help` / `--version` は他のオプションを無視する**: パース途中で検出した
-  時点で即座に返り、それ以前に解釈されたオプションは破棄される。
-- **オプション値の未検証**: `--font` / `--theme` / `--look` の値は mermaid.js に
-  そのまま渡される。不正値でも sekien は exit 0 し、mermaid.js がフォールバック
-  または描画エラーとして処理する。
-- **未知のフラグ**: `-` で始まる未知の引数はエラーとして **exit 1**。
+- **`--help` / `--version` discard preceding options**: When detected during
+  parsing, the parser returns immediately and any options seen so far are dropped.
+- **Option values are not validated**: Values for `--font`, `--theme`, and
+  `--look` are passed through to mermaid.js as-is. An invalid value results in
+  exit 0 with mermaid.js falling back or emitting a render error.
+- **Unknown flags**: Any unrecognised argument starting with `-` is an error
+  (**exit 1**).

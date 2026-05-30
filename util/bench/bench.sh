@@ -1,19 +1,19 @@
 #!/bin/bash
-# sekien benchmark — wall time + max RSS (全子プロセス含む)
+# sekien benchmark — wall time + max RSS (all child processes included)
 #
-# 使い方:
+# Usage:
 #   ./bench.sh
 #   SEKIEN_BIN=../../target/release/sekien ./bench.sh
 #   WARMUP_RUNS=5 BENCH_RUNS=20 ./bench.sh
 #
-# 出力: Markdown table (stdout)。進捗は stderr。
-# mmdc が PATH にあれば sekien と比較する。
+# Output: Markdown table on stdout. Progress on stderr.
+# If mmdc is on PATH, results are compared against it.
 #
-# RSS は計測対象プロセスの全子孫を PPID チェーンで辿って合算する。
-# これにより sekien の Xvfb/WebKit、mmdc の Chromium も含む正確な値が得られる。
-# 10ms 間隔でサンプリングしてピーク値の中央値を採用する。
+# RSS is measured by walking the full PPID chain of the target process,
+# capturing Xvfb/WebKit for sekien and Chromium for mmdc.
+# Sampled every 10 ms; the median peak value is reported.
 #
-# 依存: ps, awk, sort, sed, date (GNU coreutils)
+# Dependencies: ps, awk, sort, sed, date (GNU coreutils)
 set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
@@ -35,7 +35,7 @@ trap 'rm -f "$DATAFILE" "$TMPSVG"' EXIT
 
 has_mmdc() { command -v mmdc >/dev/null 2>&1; }
 
-# PPID チェーンで pid の全子孫の RSS を合算 (KB)
+# Sum RSS of a process and all its descendants by walking the PPID chain (KB).
 tree_rss_kb() {
     local root=$1
     ps -e -o pid= -o ppid= -o rss= | awk -v root="$root" '
@@ -53,7 +53,7 @@ tree_rss_kb() {
     }'
 }
 
-# 1 回計測。"elapsed_ms max_rss_kb" を $DATAFILE に書き出す。
+# Run one measurement. Writes "elapsed_ms max_rss_kb" to $DATAFILE.
 measure() {
     local t0 t1 max_rss=0 rss pid
     t0=$(date +%s%3N)
@@ -69,13 +69,13 @@ measure() {
     printf '%d %d\n' "$(( t1 - t0 ))" "$max_rss" > "$DATAFILE"
 }
 
-# 整数リストの中央値 (lower median)
+# Lower median of a list of integers.
 median() {
     local n=$#
     printf '%s\n' "$@" | sort -n | sed -n "$(( (n + 1) / 2 ))p"
 }
 
-# bench <cmd...> → "median_ms median_rss_kb" を echo
+# bench <cmd...> → echoes "median_ms median_rss_kb"
 bench() {
     local i ms rss times=() rsses=()
     for (( i = 0; i < WARMUP_RUNS; i++ )); do

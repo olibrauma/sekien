@@ -10,22 +10,21 @@ use std::io::{self, Read};
 
 fn usage() -> String {
     format!(
-        "sekien — Mermaid Drawer (mermaid.js {MERMAID_VERSION})
+        "Sekien draws Mermaids natively. (mermaid.js {MERMAID_VERSION})
 
 Usage:
   sekien [options] [file.mmd]         Mermaid → SVG (stdout)
   cat diagram.mmd | sekien            Mermaid → SVG (stdout)
 
-sekien は cat のような streaming プロセス。stdin (またはファイル) を EOF まで
-読み続け、`\\0` (NUL byte) を block 区切りとして 1 つずつ Mermaid → SVG に変換し、
-SVG を `\\0` 区切りで stdout に流す。stdin 末尾の `\\0` 1 個は無視される。
+Sekien is a streaming process, like cat. It reads stdin (or a file) until EOF,
+splitting on `\\0` (NUL byte), and converts each Mermaid block to SVG, streaming
+results to stdout. A single trailing `\\0` on stdin is ignored.
 
-block 単位の Mermaid 解析エラーはエラーメッセージを stderr に出力して継続する
-(exit 0)。--meta を指定すると、エラーメッセージの前に `<!-- {{\"id\": N}} -->`
-を付与する。sekien 自身の失敗 (display 初期化失敗、malformed IPC 等) は exit 1。
+Mermaid parse errors are written to stderr and processing continues (exit 0).
+With --meta, each error is preceded by `<!-- {{\"id\": N}} -->`. Fatal failures
+(display init, malformed IPC, etc.) exit 1.
 
-対話モードで使う場合、terminal 上で Ctrl + @ が NUL byte を入力する手段。
-EOF (Ctrl + D) で sekien を終了させる。
+In interactive mode, use Ctrl+@ to send a NUL byte and Ctrl+D to exit.
 
 Options:
   --font <font>          Font family for diagram text (default: mermaid.js default)
