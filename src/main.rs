@@ -227,6 +227,17 @@ mod tests {
     }
 
     #[test]
+    fn config_flag() {
+        let (opts, _) = parse_args(args(&["--config", "config.json"])).unwrap();
+        assert_eq!(opts.config_file, Some("config.json".to_string()));
+    }
+
+    #[test]
+    fn config_flag_missing_value_is_error() {
+        assert!(parse_args(args(&["--config"])).is_err());
+    }
+
+    #[test]
     fn too_many_files_is_error() {
         assert!(parse_args(args(&["a.mmd", "b.mmd"])).is_err());
     }
