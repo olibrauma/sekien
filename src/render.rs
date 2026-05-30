@@ -53,6 +53,9 @@ pub struct RenderConfig {
     pub theme: Option<String>,
     pub look: Option<String>,
     pub show_block_ids: bool,
+    /// `--config` で渡された JSON オブジェクト文字列（正規化済み）。
+    /// `mermaid.initialize()` に spread される。
+    pub config_json: Option<String>,
 }
 
 /// event loop で扱う user event。reader thread (Block / InputEnd / InputError)
@@ -80,16 +83,17 @@ enum IpcMessage {
     Error { id: usize, error: String },
 }
 
-/// HTML の `<script>` ブロック内に埋め込める JS 文字列リテラルに変換する。
+/// `<script>` 内に安全に埋め込めるよう `<` / `>` を Unicode エスケープする。
 ///
-/// `serde_json::to_string` は valid な JS 文字列リテラルを返すが `<` を escape
-/// しないため、`</script>` 等が含まれると script タグを抜けて HTML を破壊できる。
-/// `<` と `>` を `<` / `>` に置換して script context でも安全にする。
+/// serde_json は `<` / `>` をエスケープしないため、`</script>` 等が含まれると
+/// script タグを早期終了させて HTML を破壊できる。
+/// 文字列リテラル・JSON オブジェクトいずれの埋め込みにも使う。
+fn escape_for_script(s: &str) -> String {
+    s.replace('<', "\\u003c").replace('>', "\\u003e")
+}
+
 fn js_string_in_html(s: &str) -> String {
-    serde_json::to_string(s)
-        .expect("serialize config field")
-        .replace('<', "\\u003c")
-        .replace('>', "\\u003e")
+    escape_for_script(&serde_json::to_string(s).expect("serialize config field"))
 }
 
 fn build_html(config: &RenderConfig) -> String {
@@ -104,11 +108,19 @@ fn build_html(config: &RenderConfig) -> String {
         js_string_in_html(v)
     )))
     .collect();
-    // `assets/render.html` の `{{MERMAID_JS}}` / `{{EXTRA_CONFIG}}` を差し替える。
-    // mermaid.min.js も extra_config も両 placeholder 文字列を含まないため
-    // ナイーブな `String::replace` で衝突しない (テンプレートエンジン不要)。
+
+    // CONFIG_JSON: --config で渡された JSON を spread する。
+    // 未指定時は空オブジェクト `{}` を使う (`...{}` は no-op)。
+    // 個別フラグ (EXTRA_CONFIG) が後に来るので CLI フラグが config file より優先される。
+    let config_json = config.config_json.as_deref()
+        .map_or_else(|| "{}".to_string(), escape_for_script);
+
+    // `assets/render.html` の各 placeholder を差し替える。
+    // mermaid.min.js / extra_config / config_json はいずれも placeholder 文字列を
+    // 含まないため、ナイーブな `String::replace` で衝突しない (テンプレートエンジン不要)。
     HTML_TEMPLATE
         .replace("{{MERMAID_JS}}", MERMAID_JS)
+        .replace("{{CONFIG_JSON}}", &config_json)
         .replace("{{EXTRA_CONFIG}}", &extra_config)
 }
 
@@ -516,6 +528,48 @@ mod tests {
         let html = build_html(&cfg(None, Some("</script>")));
         assert!(!html.contains("theme: \"</script>\""));
         assert!(html.contains("\\u003c/script\\u003e"));
+    }
+
+    fn cfg_with_config_json(json: &str) -> RenderConfig {
+        RenderConfig {
+            config_json: Some(json.to_string()),
+            ..Default::default()
+        }
+    }
+
+    #[test]
+    fn build_html_no_config_json_uses_empty_spread() {
+        let html = build_html(&cfg(None, None));
+        assert!(html.contains("...{}"));
+    }
+
+    #[test]
+    fn build_html_with_config_json() {
+        let html = build_html(&cfg_with_config_json(r#"{"flowchart":{"curve":"basis"}}"#));
+        assert!(html.contains(r#"...{"flowchart":{"curve":"basis"}}"#));
+    }
+
+    #[test]
+    fn build_html_config_json_closing_script_tag_is_escaped() {
+        let html = build_html(&cfg_with_config_json(r#"{"fontFamily":"a</script>b"}"#));
+        // config_json 内の </script> がエスケープされていること
+        assert!(html.contains("\\u003c/script\\u003e"));
+        // エスケープ前の文字列が config_json として埋め込まれていないこと
+        assert!(!html.contains(r#""a</script>b""#));
+    }
+
+    #[test]
+    fn build_html_config_json_cli_flag_comes_after_spread() {
+        // spread より後に個別フラグが来ることで CLI フラグが優先されることを確認
+        let config = RenderConfig {
+            theme: Some("forest".to_string()),
+            config_json: Some(r#"{"theme":"dark"}"#.to_string()),
+            ..Default::default()
+        };
+        let html = build_html(&config);
+        let spread_pos = html.find("...{").unwrap();
+        let theme_pos  = html.find("theme: \"forest\"").unwrap();
+        assert!(spread_pos < theme_pos, "spread must appear before CLI flag override");
     }
 
     fn parse_ipc(s: &str) -> Result<IpcMessage, serde_json::Error> {

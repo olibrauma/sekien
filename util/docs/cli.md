@@ -52,6 +52,27 @@ mermaid.js のテーマ。以下の値を受け付ける:
 - 環境変数 `SEKIEN_LOOK` でも指定可能（CLI フラグが優先）
 - 値の妥当性検証は行わない。
 
+### `--config <file>`
+
+`mermaid.initialize()` に渡す設定を JSON ファイルで指定する。
+ファイルはトップレベルが JSON オブジェクトでなければならない。
+
+```json
+{
+  "flowchart": { "curve": "basis" },
+  "sequence":  { "showSequenceNumbers": true },
+  "themeVariables": { "primaryColor": "#ff0000" }
+}
+```
+
+設定できる項目の一覧は
+[mermaid.js 設定スキーマ](https://mermaid.js.org/config/schema-docs/config.html) 参照。
+
+- CLI フラグ (`--theme` 等) は config ファイルの同名キーより**優先**される。
+- `startOnLoad` / `htmlLabels` は sekien の動作に必須のため、config ファイルの値に
+  関わらず常に上書きされる。
+- 環境変数 `SEKIEN_CONFIG` でも指定可能（CLI フラグが優先）。
+
 ### `--block-id`
 
 stdout (SVG) と stderr (エラー) の各出力ブロックの先頭に
@@ -82,6 +103,7 @@ sekien <semver> (mermaid.js <semver>)
 | `SEKIEN_FONT` | `--font` | フォントファミリー |
 | `SEKIEN_THEME` | `--theme` | mermaid.js テーマ |
 | `SEKIEN_LOOK` | `--look` | 描画スタイル |
+| `SEKIEN_CONFIG` | `--config` | mermaid.initialize() 設定 JSON ファイルのパス |
 
 CLI フラグと環境変数を両方指定した場合、**CLI フラグが優先**される。
 

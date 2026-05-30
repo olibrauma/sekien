@@ -3,6 +3,7 @@ mod render;
 mod linux_display;
 
 use anyhow::{bail, Context, Result};
+use serde_json;
 use render::{RenderConfig, MERMAID_VERSION};
 use std::env;
 use std::fs;
@@ -36,6 +37,10 @@ Options:
   --look <look>          Diagram look (classic | handDrawn | neo)
                          handDrawn is supported for flowchart/graph only.
                          Also configurable via SEKIEN_LOOK env var.
+  --config <file>        JSON config file for mermaid.initialize()
+                         (see https://mermaid.js.org/config/schema-docs/config.html)
+                         Also configurable via SEKIEN_CONFIG env var.
+                         CLI flags (--theme etc.) take precedence over this file.
   --block-id             Prepend <!-- {{\"id\": N}} --> before each stdout (SVG) and
                          stderr (error) output
   --version, -v          Show version
@@ -49,6 +54,7 @@ struct Options {
     theme: Option<String>,
     look: Option<String>,
     show_block_ids: bool,
+    config_file: Option<String>,
 }
 
 enum Command {
@@ -77,6 +83,9 @@ fn parse_args(raw: Vec<String>) -> Result<(Options, Command)> {
             }
             "--block-id" => {
                 options.show_block_ids = true;
+            }
+            "--config" => {
+                options.config_file = Some(iter.next().context("--config requires a value")?);
             }
             _ if arg.starts_with('-') => {
                 bail!("unknown option: {arg}");
@@ -110,11 +119,26 @@ fn main() -> Result<()> {
     let raw: Vec<String> = env::args().skip(1).collect();
     let (options, command) = parse_args(raw)?;
 
+    let config_json = match options.config_file.or_else(|| env::var("SEKIEN_CONFIG").ok()) {
+        Some(path) => {
+            let raw = fs::read_to_string(&path)
+                .with_context(|| format!("cannot read config file '{path}'"))?;
+            let value: serde_json::Value = serde_json::from_str(&raw)
+                .with_context(|| format!("invalid JSON in '{path}'"))?;
+            if !value.is_object() {
+                bail!("'{path}': expected a JSON object");
+            }
+            Some(serde_json::to_string(&value).expect("re-serialize"))
+        }
+        None => None,
+    };
+
     let config = RenderConfig {
         font_family: options.font_family.or_else(|| env::var("SEKIEN_FONT").ok()),
         theme:       options.theme      .or_else(|| env::var("SEKIEN_THEME").ok()),
         look:        options.look       .or_else(|| env::var("SEKIEN_LOOK").ok()),
         show_block_ids: options.show_block_ids,
+        config_json,
     };
 
     match command {
