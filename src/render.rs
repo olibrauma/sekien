@@ -310,10 +310,8 @@ impl StreamState {
 
     /// block comment (オプション) + content + `\n` を組み立てる。
     fn format_output(&self, id: usize, content: &str) -> String {
-        let mut s = if self.config.show_block_ids { format_block_comment(id) } else { String::new() };
-        s.push_str(content);
-        s.push('\n');
-        s
+        let prefix = if self.config.show_block_ids { format_block_comment(id) } else { String::new() };
+        format!("{prefix}{content}\n")
     }
 
     fn on_ipc(&mut self, msg: &str, wv: &WebView) -> StepResult {
