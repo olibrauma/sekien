@@ -164,13 +164,9 @@ fn create_webview(
 /// `buf` を 1 つの `Block` として emit する。UTF-8 invalid なら `InputError` を
 /// emit して `false` を返す (caller が読み込みを打ち切るシグナル)。
 fn emit_block<F: FnMut(LoopEvent)>(buf: &mut Vec<u8>, on_event: &mut F) -> bool {
-    match String::from_utf8(std::mem::take(buf)) {
-        Ok(s) => { on_event(LoopEvent::Block(s)); true }
-        Err(e) => {
-            on_event(LoopEvent::InputError(format!("input is not valid UTF-8: {e}")));
-            false
-        }
-    }
+    String::from_utf8(std::mem::take(buf))
+        .map(|s| { on_event(LoopEvent::Block(s)); true })
+        .unwrap_or_else(|e| { on_event(LoopEvent::InputError(format!("input is not valid UTF-8: {e}"))); false })
 }
 
 /// 入力 stream を読みつつ `\0` で分割し、block ごとに `on_event` を呼ぶ。
