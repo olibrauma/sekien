@@ -68,6 +68,7 @@ mermaid.js のテーマ。以下の値を受け付ける:
 - CLI フラグ (`--theme` 等) は config ファイルの同名キーより**優先**される。
 - `startOnLoad` / `htmlLabels` は sekien の動作に必須のため、config ファイルの値に
   関わらず常に上書きされる。
+- `securityLevel` のデフォルトは `"strict"`。config ファイルで上書き可能。
 
 ### `--block-id`
 
