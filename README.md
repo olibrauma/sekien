@@ -1,40 +1,8 @@
 # sekien — Mermaid Drawer
 
-sekien is a drawer of Mermaids — Mermaid コードを SVG に変換する CLI ツール。
-
-Mermaid 公式の [`mmdc`](https://github.com/mermaid-js/mermaid-cli) に比べて、sekien は **最大 83 倍小さく**、**最大 8 倍軽く**、**最大 3 倍速い**（詳細は下表）。
-
-## mmdc との比較
-
-OS ネイティブの WebView を活用することで、標準的な `mmdc` (Puppeteer/Chromium ベース) に比べ圧倒的に軽量・高速に動作します。
-
-いずれの環境でも実行速度・メモリ使用量ともに優位なのは、重量級の Chromium をバンドルせず、OS 標準の描画エンジンをダイレクトに叩くためです。
-
-- `util/bench/` の 3 図の中央値。 mmdc は 11.14.0
-- 計測環境: macOS (arm64)、sekien 0.1.0 (mermaid.js 11.14.0)
-- 計測環境: Linux (x86_64)、sekien 0.1.0 (mermaid.js 11.14.0)、内部 Xvfb 使用
-- Max RSS は Xvfb/WebKit/Chromium を含む全子プロセスの合計最大値 (`util/bench/bench.sh` 参照)。
-
-### バイナリサイズ
-
-| platform | sekien | mmdc | Advantage |
-|---|---|---|---|
-| Mac | **~10 MB** | 330 MB | 97% 小さい |
-| Linux | **4.8 MB** | 401 MB | 99% 小さい |
-
-### 実行速度
-
-| platform | sekien | mmdc | Advantage |
-|---|---|---|---|
-| Mac | **~360 ms** | ~1.1 s | **67% 速い** |
-| Linux | **~1.1 s** | ~1.6 s | **31% 速い** |
-
-### メモリ使用量
-
-| platform | sekien | mmdc | Advantage |
-|---|---|---|---|
-| Mac | **~90 MB** | ~690 MB | **87% 軽い** |
-| Linux | **~430 MB** | ~630 MB | **32% 軽い** |
+Mermaid コードを SVG に変換する CLI ツール。OS ネイティブ WebView を使うため、
+Chromium をバンドルする [`mmdc`](https://github.com/mermaid-js/mermaid-cli) より
+軽量・高速・小さい。
 
 ## インストール
 
@@ -43,7 +11,10 @@ cargo install sekien
 ```
 
 Linux の場合はビルドに WebKitGTK 関連のパッケージが必要です（Ubuntu 例）:
-`sudo apt install libwebkit2gtk-4.1-dev libgtk-3-dev`
+
+```bash
+sudo apt install libwebkit2gtk-4.1-dev libgtk-3-dev
+```
 
 ## 使い方
 
@@ -54,13 +25,13 @@ sekien diagram.mmd > diagram.svg
 # stdin → SVG (stdout)
 cat diagram.mmd | sekien > diagram.svg
 
-# 複数 Mermaid を 1 回の sekien 起動で処理 (\0 区切り)
+# 複数 Mermaid を 1 回の起動で処理 (\0 区切り)
 printf 'graph LR\n  A --> B\0graph TD\n  X --> Y' | sekien > out.bin
 ```
 
 sekien は cat のような streaming プロセス。stdin を EOF まで読み続け、各 block
 の SVG を即座に stdout に流す。block 単位の Mermaid 解析エラーは stderr に
-`<!-- {"id": N} -->` 形式のメタデータ（オプション）とエラーメッセージを出力して継続する。
+エラーメッセージを出力して継続する（continue-on-error）。
 
 ### 対話モード
 
@@ -91,15 +62,9 @@ sekien を終了させる手段。
 | `--version`, `-v` | バージョン表示 |
 | `--help`, `-h` | ヘルプ表示 |
 
-### 設定の永続化
-
 よく使うオプションはシェルの alias に書いておくと毎回の入力を省ける:
 
 ```bash
-# ~/.bashrc や ~/.zshrc に追記
-alias sekien='sekien --theme dark --font "Noto Sans"'
-
-# --config でまとめて管理する場合
 alias sekien='sekien --config ~/.config/sekien.json'
 ```
 
@@ -129,11 +94,39 @@ sekien は Linux では実行のたびに内部で Xvfb を起動し、その仮
 描画する。デスクトップ環境 (X11 / Wayland / Xwayland) や `$DISPLAY` の値は
 一切参照しない。
 
+## mmdc との比較
+
+OS ネイティブの WebView を活用することで、標準的な `mmdc` (Puppeteer/Chromium
+ベース) に比べ軽量・高速に動作します。
+
+- 計測値は `util/bench/` の 3 図の中央値。mmdc 11.14.0 / sekien 0.1.0 (mermaid.js 11.14.0)
+- Max RSS は Xvfb/WebKit/Chromium を含む全子プロセスの合計最大値 (`util/bench/bench.sh` 参照)
+
+### バイナリサイズ
+
+| platform | sekien | mmdc | Advantage |
+|---|---|---|---|
+| Mac | **~10 MB** | 330 MB | 97% 小さい |
+| Linux | **4.8 MB** | 401 MB | 99% 小さい |
+
+### 実行速度
+
+| platform | sekien | mmdc | Advantage |
+|---|---|---|---|
+| Mac | **~360 ms** | ~1.1 s | **67% 速い** |
+| Linux | **~1.1 s** | ~1.6 s | **31% 速い** |
+
+### メモリ使用量
+
+| platform | sekien | mmdc | Advantage |
+|---|---|---|---|
+| Mac | **~90 MB** | ~690 MB | **87% 軽い** |
+| Linux | **~430 MB** | ~630 MB | **32% 軽い** |
+
 ## 構成
 
-詳細なプロトコル仕様は [protocol.md](util/docs/protocol.md) 参照。
-
-### render.rs
+詳細なプロトコル仕様は [protocol.md](util/docs/protocol.md)、設計方針は
+[DESIGN.md](util/docs/DESIGN.md) を参照。
 
 **wry** が提供する OS ネイティブ WebView を起動し、mermaid.js を使って
 Mermaid コードを SVG に変換する。イベントループとウィンドウ管理は **tao**。
