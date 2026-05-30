@@ -3,7 +3,6 @@ mod render;
 mod linux_display;
 
 use anyhow::{bail, Context, Result};
-use serde_json;
 use render::{RenderConfig, MERMAID_VERSION};
 use std::env;
 use std::fs;
