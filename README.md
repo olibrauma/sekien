@@ -2,7 +2,7 @@
 
 sekien is a drawer of Mermaids — Mermaid コードを SVG に変換する CLI ツール。
 
-Mermaid 公式の [`mmdc`](https://github.com/mermaid-js/mermaid-cli) に比べて、sekien は **約 70 倍小さく**、**約 8 倍軽く**、**約 3 倍速い**。
+Mermaid 公式の [`mmdc`](https://github.com/mermaid-js/mermaid-cli) に比べて、sekien は **最大 83 倍小さく**、**最大 8 倍軽く**、**最大 3 倍速い**（詳細は下表）。
 
 ## mmdc との比較
 
@@ -108,10 +108,10 @@ sekien は Linux では実行のたびに内部で Xvfb を起動し、その仮
 
 詳細なプロトコル仕様は [protocol.md](util/docs/protocol.md) 参照。
 
-### renderer.rs
+### render.rs
 
-**tao** が提供する OS ネイティブ WebView を起動し、mermaid.js を使って
-Mermaid コードを SVG に変換する。
+**wry** が提供する OS ネイティブ WebView を起動し、mermaid.js を使って
+Mermaid コードを SVG に変換する。イベントループとウィンドウ管理は **tao**。
 
 ## License
 
