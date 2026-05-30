@@ -18,11 +18,11 @@ Usage:
 
 sekien は cat のような streaming プロセス。stdin (またはファイル) を EOF まで
 読み続け、`\\0` (NUL byte) を block 区切りとして 1 つずつ Mermaid → SVG に変換し、
-SVG を `\\0` 区切りで stdout に流す。
+SVG を `\\0` 区切りで stdout に流す。stdin 末尾の `\\0` 1 個は無視される。
 
-block 単位の Mermaid 解析エラーは stderr に `Error: mermaid block N: <msg>`
-を 1 行出して継続する (exit 0)。sekien 自身の失敗 (display 初期化失敗、
-malformed IPC、stdout 書き込み失敗等) は exit 1。
+block 単位の Mermaid 解析エラーはエラーメッセージを stderr に出力して継続する
+(exit 0)。--block-id を指定すると、エラーメッセージの前に `<!-- {{\"id\": N}} -->`
+を付与する。sekien 自身の失敗 (display 初期化失敗、malformed IPC 等) は exit 1。
 
 対話モードで使う場合、terminal 上で Ctrl + @ が NUL byte を入力する手段。
 EOF (Ctrl + D) で sekien を終了させる。
@@ -36,11 +36,10 @@ Options:
   --look <look>          Diagram look (classic | handDrawn | neo)
                          handDrawn is supported for flowchart/graph only.
                          Also configurable via SEKIEN_LOOK env var.
-  --block-id             Prepend an XML comment with the block ID to each SVG output
+  --block-id             Prepend <!-- {{\"id\": N}} --> before each stdout (SVG) and
+                         stderr (error) output
   --version, -v          Show version
-  --help, -h             Show this help
-
-For Pandoc integration, use sekien-pandoc instead."
+  --help, -h             Show this help"
     )
 }
 
