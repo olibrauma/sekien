@@ -30,6 +30,9 @@ pub fn ensure_display() -> Result<()> {
     // GPU 加速を無効化して libEGL 警告を抑制し、ソフトウェアレンダリングを強制する
     std::env::set_var("WEBKIT_DISABLE_COMPOSITING_MODE", "1");
     std::env::set_var("LIBGL_ALWAYS_SOFTWARE", "1");
+    // AT-SPI (アクセシビリティバス) への接続試行を無効化する。
+    // 接続できない環境 (ヘッドレス CI 等) で GTK が dbind-WARNING を stderr に出力するのを防ぐ。
+    std::env::set_var("NO_AT_BRIDGE", "1");
 
     spawn_xvfb().context("failed to start Xvfb (install xvfb)")?;
     Ok(())
