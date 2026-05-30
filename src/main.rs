@@ -108,7 +108,7 @@ fn load_config_json(path: &str) -> Result<String> {
     if !value.is_object() {
         bail!("'{path}': expected a JSON object");
     }
-    Ok(serde_json::to_string(&value).expect("re-serialize"))
+    Ok(value.to_string())
 }
 
 fn main() -> Result<()> {
