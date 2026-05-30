@@ -21,7 +21,7 @@ sekien は cat のような streaming プロセス。stdin (またはファイ�
 SVG を `\\0` 区切りで stdout に流す。stdin 末尾の `\\0` 1 個は無視される。
 
 block 単位の Mermaid 解析エラーはエラーメッセージを stderr に出力して継続する
-(exit 0)。--block-id を指定すると、エラーメッセージの前に `<!-- {{\"id\": N}} -->`
+(exit 0)。--meta を指定すると、エラーメッセージの前に `<!-- {{\"id\": N}} -->`
 を付与する。sekien 自身の失敗 (display 初期化失敗、malformed IPC 等) は exit 1。
 
 対話モードで使う場合、terminal 上で Ctrl + @ が NUL byte を入力する手段。
@@ -36,7 +36,7 @@ Options:
   --config <file>        JSON config file for mermaid.initialize()
                          (see https://mermaid.js.org/config/schema-docs/config.html)
                          CLI flags (--theme etc.) take precedence over this file.
-  --block-id             Prepend <!-- {{\"id\": N}} --> before each stdout (SVG) and
+  --meta                 Prepend <!-- {{\"id\": N}} --> before each stdout (SVG) and
                          stderr (error) output
   --version, -v          Show version
   --help, -h             Show this help"
@@ -48,7 +48,7 @@ struct Options {
     font_family: Option<String>,
     theme: Option<String>,
     look: Option<String>,
-    show_block_ids: bool,
+    show_meta: bool,
     config_file: Option<String>,
 }
 
@@ -76,8 +76,8 @@ fn parse_args(raw: Vec<String>) -> Result<(Options, Command)> {
             "--look" => {
                 options.look = Some(iter.next().context("--look requires a value")?);
             }
-            "--block-id" => {
-                options.show_block_ids = true;
+            "--meta" => {
+                options.show_meta = true;
             }
             "--config" => {
                 options.config_file = Some(iter.next().context("--config requires a value")?);
@@ -130,7 +130,7 @@ fn main() -> Result<()> {
         font_family: options.font_family,
         theme: options.theme,
         look: options.look,
-        show_block_ids: options.show_block_ids,
+        show_meta: options.show_meta,
         config_json,
     };
 

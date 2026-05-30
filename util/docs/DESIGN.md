@@ -83,7 +83,7 @@ for f in "${files[@]}"; do cat "$f"; printf '\0'; done \
   StreamState 内に `VecDeque<(id, content)>` を持つ。awaiting (= 1 件だけ
   render 中) と webview_ready の両方が揃ったときに queue の先頭を pop
 - **block id は 1-origin**: `next_index` から消費。webview の `mermaid.render`
-  には `d{id}` の DOM id として渡す。`--block-id` 時に出す N もこの 1-origin
+  には `d{id}` の DOM id として渡す。`--meta` 時に出す N もこの 1-origin
 - **stdout の即時 flush**: `io::stdout().lock()` + `flush()` で SVG ごとに
   pipe へ push する。これにより `sekien | head -1` のような pipeline でも
   最初の SVG が即座に下流に届く

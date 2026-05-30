@@ -52,7 +52,7 @@ pub struct RenderConfig {
     pub font_family: Option<String>,
     pub theme: Option<String>,
     pub look: Option<String>,
-    pub show_block_ids: bool,
+    pub show_meta: bool,
     /// `--config` で渡された JSON オブジェクト文字列（正規化済み）。
     /// `mermaid.initialize()` に spread される。
     pub config_json: Option<String>,
@@ -345,7 +345,7 @@ impl StreamState {
 
     /// block comment (オプション) + content + `\n` を組み立てる。
     fn format_output(&self, id: usize, content: &str) -> String {
-        let prefix = if self.config.show_block_ids {
+        let prefix = if self.config.show_meta {
             format_block_comment(id)
         } else {
             String::new()

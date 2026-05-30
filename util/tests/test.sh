@@ -105,7 +105,7 @@ echo ""
 # --- テスト 6: エラー継続 (continue-on-error) ---
 echo "[6] エラー継続: 3 ブロック中 2 番目が不正"
 printf 'graph LR\n  A --> B\x00thisIsNotValidMermaid\x00graph TD\n  X --> Y' \
-    | "$BINARY" --block-id > "$TMPOUT" 2>"$TMPERR"
+    | "$BINARY" --meta > "$TMPOUT" 2>"$TMPERR"
 EXIT=$?
 [ $EXIT -eq 0 ] && pass "exit 0 (continue-on-error)" || fail "exit $EXIT (expected 0)"
 SVG_COUNT=$(count_svg_in_file "$TMPOUT")
@@ -113,7 +113,7 @@ SVG_COUNT=$(count_svg_in_file "$TMPOUT")
 NUL_COUNT=$(count_nul_in_file "$TMPOUT")
 [ "$NUL_COUNT" -eq 1 ] && pass "stdout has 1 NUL separator" || fail "stdout has $NUL_COUNT NUL(s) (expected 1)"
 grep -qF '<!-- {"id": 2} -->' "$TMPERR" \
-    && pass "stderr contains block-id comment for failed block 2" \
+    && pass "stderr contains meta comment for failed block 2" \
     || fail "stderr missing <!-- {\"id\": 2} -->: $(cat "$TMPERR")"
 grep -qF 'No diagram type detected' "$TMPERR" \
     && pass "stderr contains mermaid error text" \
@@ -123,17 +123,17 @@ echo ""
 # --- テスト 7: 全ブロック失敗 → stdout 空, stderr に全ブロック分のエラー ---
 echo "[7] 全ブロック失敗 → stdout 空, stderr に 3 ブロック分のエラー"
 printf 'bogusOne\x00bogusTwo\x00bogusThree' \
-    | "$BINARY" --block-id > "$TMPOUT" 2>"$TMPERR"
+    | "$BINARY" --meta > "$TMPOUT" 2>"$TMPERR"
 EXIT=$?
 [ $EXIT -eq 0 ] && pass "exit 0" || fail "exit $EXIT (expected 0)"
 [ ! -s "$TMPOUT" ] && pass "stdout empty" || fail "stdout not empty ($(wc -c < "$TMPOUT") bytes)"
 COUNT_IDS=$(grep -c '<!-- {"id":' "$TMPERR" || true)
-[ "$COUNT_IDS" -eq 3 ] && pass "stderr has 3 block-id error lines" || fail "stderr has $COUNT_IDS block-id lines (expected 3)"
+[ "$COUNT_IDS" -eq 3 ] && pass "stderr has 3 meta error lines" || fail "stderr has $COUNT_IDS meta lines (expected 3)"
 echo ""
 
-# --- テスト 8: --block-id → stdout に JSON コメントが付く ---
-echo "[8] --block-id オプション → stdout に <!-- {\"id\": N} --> が付く"
-printf 'graph LR\n  A --> B\n' | "$BINARY" --block-id > "$TMPOUT" 2>"$TMPERR"
+# --- テスト 8: --meta → stdout に JSON コメントが付く ---
+echo "[8] --meta オプション → stdout に <!-- {\"id\": N} --> が付く"
+printf 'graph LR\n  A --> B\n' | "$BINARY" --meta > "$TMPOUT" 2>"$TMPERR"
 EXIT=$?
 [ $EXIT -eq 0 ] && pass "exit 0" || fail "exit $EXIT (expected 0)"
 grep -qF '<!-- {"id": 1} -->' "$TMPOUT" \

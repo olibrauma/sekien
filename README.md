@@ -58,7 +58,7 @@ sekien を終了させる手段。
 | `--theme <name>` | mermaid.js テーマ |
 | `--look <name>` | 描画スタイル |
 | `--config <file>` | mermaid.initialize() 設定 JSON ファイル |
-| `--block-id` | 各出力の前にメタデータ (`<!-- {"id": N} -->`) を付与 |
+| `--meta` | 各出力の前にメタデータ (`<!-- {"id": N} -->`) を付与 |
 | `--version`, `-v` | バージョン表示 |
 | `--help`, `-h` | ヘルプ表示 |
 
