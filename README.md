@@ -111,6 +111,18 @@ alias sekien='sekien --config ~/.config/sekien.json'
 | Windows | ディスプレイ接続が必要 (WebView2) |
 | Linux | Xvfb (内部で自動起動。画面/セッション不問) |
 
+### macOS: Gatekeeper の警告
+
+GitHub Releases からダウンロードしたバイナリはコード署名されていないため、
+初回実行時に Gatekeeper がブロックする場合がある。その場合は以下のコマンドで
+quarantine 属性を解除する:
+
+```bash
+xattr -d com.apple.quarantine sekien
+```
+
+または System Settings → Privacy & Security → 「このまま開く」でも許可できる。
+
 ### Linux: Xvfb が必須
 
 sekien は Linux では実行のたびに内部で Xvfb を起動し、その仮想 display 上で
