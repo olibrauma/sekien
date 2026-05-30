@@ -225,6 +225,19 @@ enum Continuation {
     Done,
 }
 
+/// IPC 結果の出力先。`Svg` → stdout、`Error` → stderr に対応する。
+#[derive(Clone, Copy)]
+enum Channel {
+    Stdout,
+    Stderr,
+}
+
+impl Channel {
+    fn kind(self) -> &'static str {
+        match self { Channel::Stdout => "svg", Channel::Stderr => "error" }
+    }
+}
+
 /// 入出力 streaming の進行状態。dispatch の gate は [`Pipeline`] が持つ
 /// (Awaiting は同時に最大 1 件、mermaid.render が単一 webview 上で並列実行
 /// できないため)。
@@ -317,28 +330,33 @@ impl StreamState {
     fn on_ipc(&mut self, msg: &str, wv: &WebView) -> StepResult {
         let parsed: IpcMessage = serde_json::from_str(msg)
             .map_err(|e| ipc_protocol_error(&format!("{e} (raw: {msg})")))?;
-        match parsed {
+
+        // Ready は制御フローのみ。Svg/Error は出力先と内容を取り出して共通処理へ。
+        let (id, content, ch) = match parsed {
             IpcMessage::Ready => {
                 self.pipeline = Pipeline::Idle;
-                self.try_dispatch_next(wv)
+                return self.try_dispatch_next(wv);
             }
-            IpcMessage::Svg { id, svg } => {
-                self.check_awaiting(id, "svg")?;
-                write_output(io::stdout().lock(), &self.format_output(id, &svg), self.wrote_any_svg)
+            IpcMessage::Svg { id, svg }     => (id, svg,   Channel::Stdout),
+            IpcMessage::Error { id, error } => (id, error, Channel::Stderr),
+        };
+
+        self.check_awaiting(id, ch.kind())?;
+        let output = self.format_output(id, &content);
+        match ch {
+            Channel::Stdout => {
+                write_output(io::stdout().lock(), &output, self.wrote_any_svg)
                     .context("failed to write SVG to stdout")?;
                 self.wrote_any_svg = true;
-                self.pipeline = Pipeline::Idle;
-                self.try_dispatch_next(wv)
             }
-            IpcMessage::Error { id, error } => {
-                self.check_awaiting(id, "error")?;
-                write_output(io::stderr().lock(), &self.format_output(id, &error), self.wrote_any_error)
+            Channel::Stderr => {
+                write_output(io::stderr().lock(), &output, self.wrote_any_error)
                     .context("failed to write error to stderr")?;
                 self.wrote_any_error = true;
-                self.pipeline = Pipeline::Idle;
-                self.try_dispatch_next(wv)
             }
         }
+        self.pipeline = Pipeline::Idle;
+        self.try_dispatch_next(wv)
     }
 }
 
