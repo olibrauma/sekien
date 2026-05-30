@@ -202,14 +202,6 @@ fn read_blocks<R: Read>(reader: R, mut on_event: impl FnMut(LoopEvent)) {
     on_event(LoopEvent::InputEnd);
 }
 
-fn spawn_input_reader<R: Read + Send + 'static>(
-    reader: R,
-    proxy: EventLoopProxy<LoopEvent>,
-) {
-    std::thread::spawn(move || {
-        read_blocks(reader, |ev| { let _ = proxy.send_event(ev); });
-    });
-}
 
 /// webview への dispatch を gate する 3 状態の state machine。
 ///
@@ -410,7 +402,7 @@ pub fn run_stream<R: Read + Send + 'static>(reader: R, config: &RenderConfig) ->
     let webview = create_webview(&window, build_html(config), proxy.clone())
         .unwrap_or_else(|e| exit_fatal(e));
 
-    spawn_input_reader(reader, proxy);
+    std::thread::spawn(move || read_blocks(reader, |ev| { let _ = proxy.send_event(ev); }));
 
     let mut state = StreamState::new(config.clone());
     event_loop.run(move |event, _event_loop, control_flow| {

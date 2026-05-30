@@ -111,16 +111,6 @@ fn load_config_json(path: &str) -> Result<String> {
     Ok(serde_json::to_string(&value).expect("re-serialize"))
 }
 
-fn open_reader(file_path: Option<&str>) -> Result<Box<dyn Read + Send>> {
-    match file_path {
-        Some(p) => {
-            let f = fs::File::open(p).with_context(|| format!("cannot read '{p}'"))?;
-            Ok(Box::new(f))
-        }
-        None => Ok(Box::new(io::stdin())),
-    }
-}
-
 fn main() -> Result<()> {
     let raw: Vec<String> = env::args().skip(1).collect();
     let (options, command) = parse_args(raw)?;
@@ -141,7 +131,10 @@ fn main() -> Result<()> {
             println!("sekien {} (mermaid.js {})", env!("CARGO_PKG_VERSION"), MERMAID_VERSION);
         }
         Command::Render { file } => {
-            let reader = open_reader(file.as_deref())?;
+            let reader: Box<dyn Read + Send> = match file.as_deref() {
+                Some(p) => Box::new(fs::File::open(p).with_context(|| format!("cannot read '{p}'"))?),
+                None    => Box::new(io::stdin()),
+            };
             render::run_stream(reader, &config)?;
         }
     }
