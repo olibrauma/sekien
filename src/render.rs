@@ -198,7 +198,6 @@ fn read_blocks<R: Read>(reader: R, mut on_event: impl FnMut(LoopEvent)) {
     on_event(LoopEvent::InputEnd);
 }
 
-
 /// webview への dispatch を gate する 3 状態の state machine。
 ///
 /// - `NotReady`: webview がまだ mermaid.initialize() 完了前
@@ -380,9 +379,9 @@ fn ipc_protocol_error(detail: &str) -> anyhow::Error {
 /// 入力 stream を取り、EOF まで streaming で Mermaid → SVG 変換を行う。
 ///
 /// 成功した SVG は stdout に `\0` 区切りで書き出す。block 単位の render
-/// 失敗は stderr に `Error: mermaid block N: <msg>` の 1 行を出して継続する
-/// (exit 0 で終了)。sekien 自身のセットアップ失敗のみ `Result::Err` (caller の
-/// `main` が anyhow chain で表示して exit 1)。
+/// 失敗は stderr にエラーメッセージを出して継続する (exit 0 で終了)。
+/// sekien 自身のセットアップ失敗のみ `Result::Err` (caller の `main` が
+/// anyhow chain で表示して exit 1)。
 pub fn run_stream<R: Read + Send + 'static>(reader: R, config: &RenderConfig) -> Result<()> {
     #[cfg(target_os = "linux")]
     linux_display::ensure_display()?;
