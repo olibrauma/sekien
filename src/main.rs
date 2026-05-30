@@ -101,6 +101,17 @@ fn parse_args(raw: Vec<String>) -> Result<(Options, Command)> {
     Ok((options, Command::Render { file: rest.into_iter().next() }))
 }
 
+fn load_config_json(path: &str) -> Result<String> {
+    let raw = fs::read_to_string(path)
+        .with_context(|| format!("cannot read config file '{path}'"))?;
+    let value: serde_json::Value = serde_json::from_str(&raw)
+        .with_context(|| format!("invalid JSON in '{path}'"))?;
+    if !value.is_object() {
+        bail!("'{path}': expected a JSON object");
+    }
+    Ok(serde_json::to_string(&value).expect("re-serialize"))
+}
+
 fn open_reader(file_path: Option<&str>) -> Result<Box<dyn Read + Send>> {
     match file_path {
         Some(p) => {
@@ -115,19 +126,7 @@ fn main() -> Result<()> {
     let raw: Vec<String> = env::args().skip(1).collect();
     let (options, command) = parse_args(raw)?;
 
-    let config_json = match options.config_file {
-        Some(path) => {
-            let raw = fs::read_to_string(&path)
-                .with_context(|| format!("cannot read config file '{path}'"))?;
-            let value: serde_json::Value = serde_json::from_str(&raw)
-                .with_context(|| format!("invalid JSON in '{path}'"))?;
-            if !value.is_object() {
-                bail!("'{path}': expected a JSON object");
-            }
-            Some(serde_json::to_string(&value).expect("re-serialize"))
-        }
-        None => None,
-    };
+    let config_json = options.config_file.as_deref().map(load_config_json).transpose()?;
 
     let config = RenderConfig {
         font_family: options.font_family,
