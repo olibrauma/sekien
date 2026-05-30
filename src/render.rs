@@ -334,7 +334,7 @@ impl StreamState {
                 output.push_str(&svg);
                 output.push('\n');
 
-                write_to_stdout(&output, self.wrote_any_svg)
+                write_output(io::stdout().lock(), &output, self.wrote_any_svg)
                     .context("failed to write SVG to stdout")?;
                 self.wrote_any_svg = true;
                 self.pipeline = Pipeline::Idle;
@@ -357,7 +357,7 @@ impl StreamState {
                 msg.push_str(&error);
                 msg.push('\n');
 
-                write_to_stderr(&msg, self.wrote_any_error)
+                write_output(io::stderr().lock(), &msg, self.wrote_any_error)
                     .context("failed to write error to stderr")?;
                 self.wrote_any_error = true;
                 self.pipeline = Pipeline::Idle;
@@ -382,20 +382,8 @@ fn dispatch_render(id: usize, content: &str, wv: &WebView) -> anyhow::Result<()>
         .map_err(|e| anyhow::anyhow!("failed to dispatch render({id}) to webview: {e}"))
 }
 
-fn write_to_stdout(content: &str, write_separator: bool) -> io::Result<()> {
-    let mut out = io::stdout().lock();
-    if write_separator {
-        out.write_all(&[0])?;
-    }
-    out.write_all(content.as_bytes())?;
-    out.flush()
-}
-
-fn write_to_stderr(content: &str, write_separator: bool) -> io::Result<()> {
-    let mut out = io::stderr().lock();
-    if write_separator {
-        out.write_all(&[0])?;
-    }
+fn write_output(mut out: impl Write, content: &str, write_separator: bool) -> io::Result<()> {
+    if write_separator { out.write_all(&[0])?; }
     out.write_all(content.as_bytes())?;
     out.flush()
 }
