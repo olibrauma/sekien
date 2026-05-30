@@ -101,8 +101,6 @@ sekien <semver> (mermaid.js <semver>)
 alias sekien='sekien --config ~/.config/sekien.json'
 ```
 
-CLI フラグと環境変数を両方指定した場合、**CLI フラグが優先**される。
-
 ## 5. 終了コード
 
 | コード | 条件 |
