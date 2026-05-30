@@ -10,20 +10,9 @@ readme = "README.md"
 keywords = ["mermaid", "svg", "cli", "streaming", "webview"]
 categories = ["command-line-utilities", "visualization"]
 
-[workspace]
-members = [
-    ".",
-    "util/bench",
-]
-resolver = "2"
-
 [[bin]]
 name = "sekien"
 path = "src/main.rs"
-
-[[test]]
-name = "integration"
-path = "util/tests/integration.rs"
 
 [dependencies]
 wry = "0.55"
