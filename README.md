@@ -81,15 +81,27 @@ sekien を終了させる手段。
 
 ## オプション
 
-| フラグ | 環境変数 | 説明 |
-|---|---|---|
-| `--font <name>` | — | フォント (CSS font-family 形式) |
-| `--theme <name>` | — | mermaid.js テーマ |
-| `--look <name>` | — | 描画スタイル |
-| `--config <file>` | — | mermaid.initialize() 設定 JSON ファイル |
-| `--block-id` | — | 各出力の前にメタデータ (`<!-- {"id": N} -->`) を付与 |
-| `--version`, `-v` | — | バージョン表示 |
-| `--help`, `-h` | — | ヘルプ表示 |
+| フラグ | 説明 |
+|---|---|
+| `--font <name>` | フォント (CSS font-family 形式) |
+| `--theme <name>` | mermaid.js テーマ |
+| `--look <name>` | 描画スタイル |
+| `--config <file>` | mermaid.initialize() 設定 JSON ファイル |
+| `--block-id` | 各出力の前にメタデータ (`<!-- {"id": N} -->`) を付与 |
+| `--version`, `-v` | バージョン表示 |
+| `--help`, `-h` | ヘルプ表示 |
+
+### 設定の永続化
+
+よく使うオプションはシェルの alias に書いておくと毎回の入力を省ける:
+
+```bash
+# ~/.bashrc や ~/.zshrc に追記
+alias sekien='sekien --theme dark --font "Noto Sans"'
+
+# --config でまとめて管理する場合
+alias sekien='sekien --config ~/.config/sekien.json'
+```
 
 ## 動作環境
 
