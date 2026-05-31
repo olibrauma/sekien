@@ -24,10 +24,10 @@ sudo apt install libwebkit2gtk-4.1-dev libgtk-3-dev
 # File input
 sekien diagram.mmd > diagram.svg
 
-# stdin input
+# Stdin input
 printf 'graph LR\n  A --> B' | sekien > diagram.svg
 
-# interactive input. Type diagram, Ctrl+D to render.
+# Interactive input. Type diagram, Ctrl+D to render.
 sekien > diagram.svg
 ```
 
