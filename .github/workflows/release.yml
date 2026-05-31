@@ -17,6 +17,8 @@ env:
 jobs:
   build:
     name: Build ${{ matrix.artifact }}
+    permissions:
+      contents: write
     strategy:
       fail-fast: false
       matrix:
