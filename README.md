@@ -21,9 +21,14 @@ sudo apt install libwebkit2gtk-4.1-dev libgtk-3-dev
 ## Usage
 
 ```bash
-sekien diagram.mmd > diagram.svg                     # file
-printf 'graph LR\n  A --> B' | sekien > diagram.svg  # stdin
-sekien                                               # interactive — type diagram, Ctrl+D to render
+# File input
+sekien diagram.mmd > diagram.svg
+
+# stdin input
+printf 'graph LR\n  A --> B' | sekien > diagram.svg
+
+# interactive input. Type diagram, Ctrl+D to render.
+sekien
 ```
 
 ### Options
@@ -46,19 +51,19 @@ alias sekien='sekien --config ~/.config/sekien.json'
 
 ### Multiple diagrams
 
-File, stdin, and interactive input all accept multiple diagrams separated by
-`\0` (NUL byte). The WebView stays alive across all diagrams, paying startup
-cost only once. Mermaid parse errors are written to stderr and processing
-continues (continue-on-error). All options above apply.
+Sekien is a streaming process, like cat. All three input modes accept multiple
+diagrams separated by `\0` (NUL byte). The WebView stays alive across all
+diagrams, paying startup cost only once. Mermaid parse errors are written to
+stderr and processing continues (continue-on-error). All options above apply.
 
 ```text
 $ sekien
 graph LR
-  A --> B
+ A --> B
 ^@
 <svg for block 1>
 graph TD
-  X --> Y
+ X --> Y
 ^@
 <svg for block 2>
 ^D
