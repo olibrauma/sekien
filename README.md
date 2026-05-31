@@ -52,8 +52,7 @@ alias sekien='sekien --config ~/.config/sekien.json'
 ### Multiple diagrams
 
 Sekien is a streaming process, like cat. All three input modes accept multiple
-diagrams separated by `\0` (NUL byte). The WebView stays alive across all
-diagrams, paying startup cost only once. Mermaid parse errors are written to
+diagrams separated by `\0` (NUL byte). Mermaid parse errors are written to
 stderr and processing continues (continue-on-error). All options above apply.
 
 ```text
