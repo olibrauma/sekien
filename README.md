@@ -72,6 +72,11 @@ graph TD
 `Ctrl+@` sends `\0` between blocks; `Ctrl+D` exits. Output SVGs are
 `\0`-separated. With `--meta`, each output is preceded by `<!-- {"id": N} -->`.
 
+For example, launch `sekien | awk 'BEGIN{RS="\0"; ORS=""} {print > NR".svg"}'`,
+then paste a diagram and immediately press `Ctrl+@` — the SVG is written to
+`1.svg`. Paste the next and press `Ctrl+@` again for `2.svg`, and so on.
+`Ctrl+D` exits.
+
 ## Platforms
 
 | OS | Requirement |
