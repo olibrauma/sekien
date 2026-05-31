@@ -67,6 +67,10 @@ $
 
 `Ctrl+@` sends a NUL byte (`\0`) to end a block; `Ctrl+D` sends EOF to exit.
 
+`--meta` prepends `<!-- {"id": N} -->` to each SVG and each error, where N is
+the 1-origin block number. Useful when piping output to a program that needs to
+correlate results back to specific input blocks.
+
 ## Platforms
 
 | OS | Requirement |
