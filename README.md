@@ -21,11 +21,9 @@ sudo apt install libwebkit2gtk-4.1-dev libgtk-3-dev
 ## Usage
 
 ```bash
-# File argument → SVG on stdout
-sekien diagram.mmd > diagram.svg
-
-# stdin → SVG on stdout
-cat diagram.mmd | sekien > diagram.svg
+sekien diagram.mmd > diagram.svg                     # file
+printf 'graph LR\n  A --> B' | sekien > diagram.svg  # stdin
+sekien                                               # interactive — type diagram, Ctrl+D to render
 ```
 
 ### Options
@@ -46,30 +44,28 @@ Persist common options in a shell alias:
 alias sekien='sekien --config ~/.config/sekien.json'
 ```
 
-### Interactive use
+### Multiple diagrams
 
-Sekien is a streaming process, like cat. It reads stdin until EOF, flushing each
-SVG to stdout as soon as it is ready. Mermaid parse errors are written to stderr
-and processing continues (continue-on-error).
-
-Launch directly from a terminal and enter diagrams one block at a time.
-All options above apply.
+File, stdin, and interactive input all accept multiple diagrams separated by
+`\0` (NUL byte). The WebView stays alive across all diagrams, paying startup
+cost only once. Mermaid parse errors are written to stderr and processing
+continues (continue-on-error). All options above apply.
 
 ```text
-$ sekien --theme dark
+$ sekien
 graph LR
   A --> B
 ^@
-<svg appears here>
+<svg for block 1>
+graph TD
+  X --> Y
+^@
+<svg for block 2>
 ^D
-$
 ```
 
-`Ctrl+@` sends a NUL byte (`\0`) to end a block; `Ctrl+D` sends EOF to exit.
-
-`--meta` prepends `<!-- {"id": N} -->` to each SVG and each error, where N is
-the 1-origin block number. Useful when piping output to a program that needs to
-correlate results back to specific input blocks.
+`Ctrl+@` sends `\0` between blocks; `Ctrl+D` exits. Output SVGs are
+`\0`-separated. With `--meta`, each output is preceded by `<!-- {"id": N} -->`.
 
 ## Platforms
 
