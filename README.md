@@ -28,7 +28,7 @@ sekien diagram.mmd > diagram.svg
 printf 'graph LR\n  A --> B' | sekien > diagram.svg
 
 # interactive input. Type diagram, Ctrl+D to render.
-sekien
+sekien > diagram.svg
 ```
 
 ### Options
