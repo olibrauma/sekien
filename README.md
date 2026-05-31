@@ -73,7 +73,7 @@ alias sekien='sekien --config ~/.config/sekien.json'
 
 | OS | Requirement |
 |---|---|
-| macOS | Display required (WKWebView) |
+| macOS (Apple Silicon) | Display required (WKWebView) |
 | Windows | Display required (WebView2) |
 | Linux | Xvfb (launched internally — no session or display needed) |
 
@@ -105,21 +105,21 @@ significantly lighter than `mmdc`.
 
 | Platform | sekien | mmdc | Advantage |
 |---|---|---|---|
-| Mac | **~10 MB** | 330 MB | 97% smaller |
+| Mac (Apple Silicon) | **~10 MB** | 330 MB | 97% smaller |
 | Linux | **4.8 MB** | 401 MB | 99% smaller |
 
 ### Speed
 
 | Platform | sekien | mmdc | Advantage |
 |---|---|---|---|
-| Mac | **~360 ms** | ~1.1 s | **67% faster** |
+| Mac (Apple Silicon) | **~360 ms** | ~1.1 s | **67% faster** |
 | Linux | **~1.1 s** | ~1.6 s | **31% faster** |
 
 ### Memory
 
 | Platform | sekien | mmdc | Advantage |
 |---|---|---|---|
-| Mac | **~90 MB** | ~690 MB | **87% less** |
+| Mac (Apple Silicon) | **~90 MB** | ~690 MB | **87% less** |
 | Linux | **~430 MB** | ~630 MB | **32% less** |
 
 ## Internals
