@@ -1,5 +1,0 @@
-# Prevent line-ending conversion on JS/HTML assets.
-# build.rs verifies their SHA256 at compile time; CRLF conversion on Windows
-# would change the hash and break the build.
-assets/mermaid.min.js binary
-assets/render.html     eol=lf

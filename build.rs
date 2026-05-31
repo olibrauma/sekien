@@ -18,8 +18,12 @@ fn main() {
 
     let bytes = fs::read(&mermaid_path).unwrap_or_else(|e| panic!("read {mermaid_path:?}: {e}"));
 
-    // Integrity check (SHA256)
-    let actual_sha = format!("{:x}", Sha256::digest(&bytes));
+    // Integrity check (SHA256).
+    // Strip \r before hashing so the check is platform-independent: git may
+    // convert LF to CRLF on Windows checkout without .gitattributes, which
+    // would otherwise change the hash.
+    let lf_bytes: Vec<u8> = bytes.iter().copied().filter(|&b| b != b'\r').collect();
+    let actual_sha = format!("{:x}", Sha256::digest(&lf_bytes));
     if actual_sha != EXPECTED_MERMAID_SHA {
         panic!(
             "\n\n\
