@@ -26,9 +26,6 @@ sekien diagram.mmd > diagram.svg
 
 # stdin → SVG on stdout
 cat diagram.mmd | sekien > diagram.svg
-
-# Multiple diagrams in one invocation (\0-delimited)
-printf 'graph LR\n  A --> B\0graph TD\n  X --> Y' | sekien > out.bin
 ```
 
 Sekien is a streaming process, like cat. It reads stdin until EOF, flushing each
