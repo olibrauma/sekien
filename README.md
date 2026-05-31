@@ -28,10 +28,6 @@ sekien diagram.mmd > diagram.svg
 cat diagram.mmd | sekien > diagram.svg
 ```
 
-Sekien is a streaming process, like cat. It reads stdin until EOF, flushing each
-SVG to stdout as soon as it is ready. Mermaid parse errors are written to stderr
-and processing continues (continue-on-error).
-
 ### Options
 
 | Flag | Description |
@@ -51,6 +47,10 @@ alias sekien='sekien --config ~/.config/sekien.json'
 ```
 
 ### Interactive use
+
+Sekien is a streaming process, like cat. It reads stdin until EOF, flushing each
+SVG to stdout as soon as it is ready. Mermaid parse errors are written to stderr
+and processing continues (continue-on-error).
 
 Launch directly from a terminal and enter diagrams one block at a time.
 All options above apply.
