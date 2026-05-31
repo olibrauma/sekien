@@ -32,23 +32,7 @@ Sekien is a streaming process, like cat. It reads stdin until EOF, flushing each
 SVG to stdout as soon as it is ready. Mermaid parse errors are written to stderr
 and processing continues (continue-on-error).
 
-### Interactive mode
-
-Launch directly from a terminal and enter diagrams one block at a time:
-
-```text
-$ sekien
-graph LR
-  A --> B
-^@
-<svg appears here>
-^D
-$
-```
-
-`Ctrl+@` sends a NUL byte (`\0`) to end a block; `Ctrl+D` sends EOF to exit.
-
-## Options
+### Options
 
 | Flag | Description |
 |---|---|
@@ -65,6 +49,23 @@ Persist common options in a shell alias:
 ```bash
 alias sekien='sekien --config ~/.config/sekien.json'
 ```
+
+### Interactive use
+
+Launch directly from a terminal and enter diagrams one block at a time.
+All options above apply.
+
+```text
+$ sekien --theme dark
+graph LR
+  A --> B
+^@
+<svg appears here>
+^D
+$
+```
+
+`Ctrl+@` sends a NUL byte (`\0`) to end a block; `Ctrl+D` sends EOF to exit.
 
 ## Platforms
 
