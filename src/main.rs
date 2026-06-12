@@ -1,12 +1,10 @@
-#[cfg(target_os = "linux")]
-mod linux_display;
-mod render;
-
 use anyhow::{bail, Context, Result};
-use render::{RenderConfig, MERMAID_VERSION};
+use sekien::{render_stream, RenderConfig, RenderOutcome, MERMAID_VERSION};
 use std::env;
 use std::fs;
-use std::io::{self, Read};
+use std::io::{self, BufRead, BufReader, Read, Write};
+use std::sync::{mpsc, Arc, Mutex};
+use std::thread;
 
 fn usage() -> String {
     format!(
@@ -115,6 +113,56 @@ fn load_config_json(path: &str) -> Result<String> {
     Ok(value.to_string())
 }
 
+/// Reads `reader`, splits on `\0`, and calls `on_block` for each block (in order).
+///
+/// On `\0`: emits the current buffer (even if empty) as a block.
+/// On EOF: emits the buffer only if non-empty (drops a single trailing `\0`).
+/// On I/O or UTF-8 error: returns `Err` immediately without reading further
+/// (blocks already passed to `on_block` are unaffected).
+fn read_blocks<R: Read>(reader: R, mut on_block: impl FnMut(String)) -> Result<(), String> {
+    let mut reader = BufReader::new(reader);
+    let mut buf: Vec<u8> = Vec::new();
+    loop {
+        match reader.read_until(0, &mut buf) {
+            Ok(0) => return Ok(()),
+            Ok(_) => {
+                let is_nul = buf.last() == Some(&0);
+                if is_nul {
+                    buf.pop();
+                }
+                let should_emit = is_nul || !String::from_utf8_lossy(&buf).trim().is_empty();
+                if should_emit {
+                    match String::from_utf8(std::mem::take(&mut buf)) {
+                        Ok(s) => on_block(s),
+                        Err(e) => return Err(format!("input is not valid UTF-8: {e}")),
+                    }
+                }
+                buf.clear();
+            }
+            Err(e) => return Err(format!("failed to read input: {e}")),
+        }
+    }
+}
+
+/// Writes one framed unit to `out`: an optional `\0` separator, an optional
+/// `--meta` comment (`<!-- {"id": N} -->`), `content`, and a trailing newline.
+fn write_framed(
+    mut out: impl Write,
+    id: usize,
+    content: &str,
+    show_meta: bool,
+    write_separator: bool,
+) -> io::Result<()> {
+    if write_separator {
+        out.write_all(&[0])?;
+    }
+    if show_meta {
+        writeln!(out, "<!-- {{\"id\": {id}}} -->")?;
+    }
+    writeln!(out, "{content}")?;
+    out.flush()
+}
+
 fn main() -> Result<()> {
     let raw: Vec<String> = env::args().skip(1).collect();
     let (options, command) = parse_args(raw)?;
@@ -129,7 +177,6 @@ fn main() -> Result<()> {
         font_family: options.font_family,
         theme: options.theme,
         look: options.look,
-        show_meta: options.show_meta,
         config_json,
     };
 
@@ -149,7 +196,47 @@ fn main() -> Result<()> {
                 }
                 None => Box::new(io::stdin()),
             };
-            render::run_stream(reader, &config)?;
+
+            let (tx, rx) = mpsc::channel::<String>();
+            let read_error: Arc<Mutex<Option<String>>> = Arc::new(Mutex::new(None));
+            {
+                let read_error = read_error.clone();
+                thread::spawn(move || {
+                    if let Err(e) = read_blocks(reader, |s| {
+                        let _ = tx.send(s);
+                    }) {
+                        *read_error.lock().unwrap() = Some(e);
+                    }
+                });
+            }
+
+            let show_meta = options.show_meta;
+            let mut wrote_svg = false;
+            let mut wrote_err = false;
+            render_stream(rx, &config, move |id, outcome| match outcome {
+                RenderOutcome::Svg(svg) => {
+                    if let Err(e) = write_framed(io::stdout().lock(), id, &svg, show_meta, wrote_svg)
+                    {
+                        eprintln!("Error: failed to write SVG to stdout: {e}");
+                        std::process::exit(1);
+                    }
+                    wrote_svg = true;
+                }
+                RenderOutcome::Error(err) => {
+                    if let Err(e) =
+                        write_framed(io::stderr().lock(), id, &err, show_meta, wrote_err)
+                    {
+                        eprintln!("Error: failed to write error to stderr: {e}");
+                        std::process::exit(1);
+                    }
+                    wrote_err = true;
+                }
+            })?;
+
+            let err = read_error.lock().unwrap().take();
+            if let Some(e) = err {
+                bail!(e);
+            }
         }
     }
 
@@ -266,5 +353,65 @@ mod tests {
     #[test]
     fn unknown_flag_with_file_is_error() {
         assert!(parse_args(args(&["--unknown", "diagram.mmd"])).is_err());
+    }
+
+    // ------ read_blocks ------
+
+    fn run_reader(bytes: &[u8]) -> (Vec<String>, Result<(), String>) {
+        let mut blocks: Vec<String> = Vec::new();
+        let result = read_blocks(std::io::Cursor::new(bytes.to_vec()), |s| blocks.push(s));
+        (blocks, result)
+    }
+
+    #[test]
+    fn reader_empty_input() {
+        let (blocks, result) = run_reader(b"");
+        assert!(blocks.is_empty());
+        assert_eq!(result, Ok(()));
+    }
+
+    #[test]
+    fn reader_single_block() {
+        let (blocks, result) = run_reader(b"graph LR\n  A --> B");
+        assert_eq!(blocks, vec!["graph LR\n  A --> B"]);
+        assert_eq!(result, Ok(()));
+    }
+
+    #[test]
+    fn reader_two_blocks() {
+        let (blocks, result) = run_reader(b"m1\0m2");
+        assert_eq!(blocks, vec!["m1", "m2"]);
+        assert_eq!(result, Ok(()));
+    }
+
+    #[test]
+    fn reader_three_blocks() {
+        let (blocks, _) = run_reader(b"a\0b\0c");
+        assert_eq!(blocks, vec!["a", "b", "c"]);
+    }
+
+    #[test]
+    fn reader_trailing_null_is_dropped() {
+        let (blocks, _) = run_reader(b"m1\0m2\0");
+        assert_eq!(blocks, vec!["m1", "m2"]);
+    }
+
+    #[test]
+    fn reader_double_trailing_null_yields_one_empty() {
+        let (blocks, _) = run_reader(b"m1\0m2\0\0");
+        assert_eq!(blocks, vec!["m1", "m2", ""]);
+    }
+
+    #[test]
+    fn reader_invalid_utf8_stops_reader() {
+        let (_, result) = run_reader(&[0xff, 0xff]);
+        assert!(result.is_err());
+    }
+
+    #[test]
+    fn reader_invalid_utf8_after_separator() {
+        let (blocks, result) = run_reader(&[b'a', 0, 0xff, 0xff]);
+        assert_eq!(blocks, vec!["a"]);
+        assert!(result.is_err());
     }
 }
