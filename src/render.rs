@@ -252,9 +252,7 @@ impl Collector {
                 self.try_dispatch_next()
             }
             IpcMessage::Svg { id, svg } => self.on_render_done(id, RenderOutcome::Svg(svg)),
-            IpcMessage::Error { id, error } => {
-                self.on_render_done(id, RenderOutcome::Error(error))
-            }
+            IpcMessage::Error { id, error } => self.on_render_done(id, RenderOutcome::Error(error)),
         }
     }
 

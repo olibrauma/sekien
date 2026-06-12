@@ -215,7 +215,8 @@ fn main() -> Result<()> {
             let mut wrote_err = false;
             render_stream(rx, &config, move |id, outcome| match outcome {
                 RenderOutcome::Svg(svg) => {
-                    if let Err(e) = write_framed(io::stdout().lock(), id, &svg, show_meta, wrote_svg)
+                    if let Err(e) =
+                        write_framed(io::stdout().lock(), id, &svg, show_meta, wrote_svg)
                     {
                         eprintln!("Error: failed to write SVG to stdout: {e}");
                         std::process::exit(1);
