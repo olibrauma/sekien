@@ -3,8 +3,8 @@
 Sekien draws Mermaids natively.
 
 Mermaid → SVG on the command line, using the OS-native WebView instead of
-bundling Chromium — lighter, faster, and far smaller than
-[`mmdc`](https://github.com/mermaid-js/mermaid-cli).
+bundling Chromium — more pipeline-friendly, lighter, faster, and far smaller
+than [`mmdc`](https://github.com/mermaid-js/mermaid-cli).
 
 ## Install
 
@@ -128,6 +128,14 @@ significantly lighter than `mmdc`.
 |---|---|---|---|
 | Mac (Apple Silicon) | **~90 MB** | ~690 MB | **87% less** |
 | Linux | **~430 MB** | ~630 MB | **32% less** |
+
+### Pipeline composability
+
+sekien is a single long-lived process, like `cat`: feed it N diagrams over
+stdin (`\0`-delimited) and it streams back N SVGs, paying the WebView/Xvfb
+startup cost once. `mmdc` supports `-i -`/`-o -` for a single diagram, but
+each invocation re-launches Chromium — chaining many diagrams through `mmdc`
+in a pipeline multiplies that startup cost by N.
 
 ## Internals
 
