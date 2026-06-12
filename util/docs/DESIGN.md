@@ -78,22 +78,70 @@ work without any delimiter conversion.
 
 ## Internals
 
+### Library / CLI split
+
+sekien is a `[lib]` + `[[bin]]` crate: `src/lib.rs` re-exports a small public
+API from `src/render.rs`, whose sole entry point is
+
+```rust
+fn render_stream(
+    diagrams: impl IntoIterator<Item = String> + Send + 'static,
+    config: &RenderConfig,
+    on_result: impl FnMut(usize, RenderOutcome) + Send + 'static,
+) -> Result<()>;
+```
+
+It renders each `String` in `diagrams` to SVG, one at a time, and calls
+`on_result(id, outcome)` for each — `id` is the 1-origin position of the
+diagram in `diagrams`, and results are delivered in that same order.
+`Err` is returned only for sekien's own fatal failures (display init, WebView
+creation, malformed IPC); per-diagram Mermaid errors are reported via
+`RenderOutcome::Error`, not `Err`.
+
+`src/main.rs` (the CLI) is an ordinary consumer of this API: it reads
+stdin/file and splits on `\0` (`read_blocks`), feeds the resulting blocks to
+`render_stream` over an `mpsc::channel`, and writes `on_result`'s output back
+to stdout/stderr with `\0`/`--meta` framing (`write_framed`). The `\0`
+protocol described in this document is entirely a CLI concern — `render_stream`
+has no knowledge of it, which lets other Rust programs (e.g. sekien-pandoc)
+call it directly without going through the wire protocol at all.
+
+### Pure core / impure shell
+
+`render_stream` itself is split into:
+
+- **`Collector`** (pure): a state machine that takes one input event — a new
+  diagram, end-of-input, or an IPC message from the WebView — and returns the
+  `Action`s (`Dispatch` / `Emit` / `Done` / `Fatal`) that should happen next.
+  It touches neither the WebView, the event loop, nor any I/O, so it is
+  unit-tested directly without a display.
+- **`render_stream`** (impure): owns the WebView/event loop, feeds events into
+  the `Collector`, and executes the `Action`s it returns (evaluate a render
+  script, call `on_result`, or exit the loop).
+
+This separation is what makes the renderer's sequencing guarantee — exactly
+one render in flight, results delivered in input order — testable without
+spinning up a WebView.
+
 ### Streaming design
 
-- **Reader/event-loop separation**: blocking stdin reads run on a dedicated
-  thread and send events via `EventLoopProxy`. The tao event loop is pinned to
-  the main thread and cannot block.
+- **Reader/event-loop separation**: in the CLI, blocking stdin reads run on a
+  dedicated thread and are forwarded to `render_stream` via an
+  `mpsc::channel`. Inside `render_stream`, a feeder thread relays the
+  `diagrams` iterator to the tao event loop via `EventLoopProxy`, which is
+  pinned to the main thread and cannot block.
 - **Queue-based dispatch**: blocks arrive faster than the WebView can render,
-  so `StreamState` holds a `VecDeque<(id, content)>`. The next block is
+  so `Collector` holds a `VecDeque<(id, content)>`. The next block is
   dispatched only when the pipeline is `Idle` (no render in flight).
-- **1-origin block IDs**: assigned from `next_index`. The WebView receives each
-  block as `renderMermaid(id, ...)` and the DOM element is named `d{id}`,
-  preventing silent misattribution of results.
-- **Per-block stdout flush**: `io::stdout().lock()` + `flush()` on every SVG
-  so that `sekien | head -1` receives the first SVG immediately.
-- **Per-block errors do not exit**: on failure, the pipeline returns to `Idle`
-  and the queue continues draining. Exit 1 is reserved for sekien's own
-  failures (reader I/O error, malformed IPC, stdout write failure, display init).
+- **1-origin block IDs**: assigned by `render_stream` via `enumerate()` over
+  `diagrams`. The WebView receives each block as `renderMermaid(id, ...)` and
+  the DOM element is named `d{id}`, preventing silent misattribution of
+  results.
+- **Per-block errors do not exit**: a Mermaid render failure is reported as
+  `RenderOutcome::Error` via `on_result`; the pipeline returns to `Idle` and
+  the queue continues draining. `render_stream`'s `Err` (and the CLI's exit 1)
+  is reserved for sekien's own failures (reader I/O error, malformed IPC,
+  display init, output write failure).
 
 ### Event loop (tao)
 
@@ -107,14 +155,18 @@ Window size and placement differ by OS:
   placement is irrelevant. GTK raises an assertion at 1×1, so the window is
   sized to 100×100 under `#[cfg(target_os = "linux")]`.
 
-`event_loop.run()` never returns (`-> !`), so `run_stream` calls
-`std::process::exit` directly. This is safe because sekien is a single-shot
-binary.
+`render_stream` uses `event_loop.run_return()`, not `run()`: it returns
+control to the caller once `Collector` signals `Done` or a fatal error occurs,
+rather than calling `process::exit`. wry's `Drop` impls tear down the
+WebView/window cleanly on return, so `render_stream` can be called from a
+long-lived host process (e.g. sekien-pandoc) and the caller continues
+normally afterwards. `std::process::exit` is only called from the CLI
+(`main.rs`), for its own fatal errors and write failures.
 
 ### Linux display resolution
 
 `ensure_display()` (in `linux_display.rs`) is called at the start of
-`run_stream`, before GTK is initialised.
+`render_stream`, before GTK is initialised.
 
 #### Why X11 is forced
 
