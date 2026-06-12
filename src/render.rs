@@ -375,6 +375,25 @@ pub fn render_stream(
 mod tests {
     use super::*;
 
+    #[test]
+    fn escape_for_script_escapes_angle_brackets() {
+        assert_eq!(
+            escape_for_script("</script><script>"),
+            "\\u003c/script\\u003e\\u003cscript\\u003e"
+        );
+    }
+
+    #[test]
+    fn js_string_in_html_escapes_quotes_and_backslashes() {
+        assert_eq!(js_string_in_html("Arial"), "\"Arial\"");
+        assert_eq!(js_string_in_html("Font\"Name"), "\"Font\\\"Name\"");
+        assert_eq!(js_string_in_html("Font\\Name"), "\"Font\\\\Name\"");
+        assert_eq!(
+            js_string_in_html("'; alert('xss'); '"),
+            "\"'; alert('xss'); '\""
+        );
+    }
+
     fn cfg(font_family: Option<&str>, theme: Option<&str>) -> RenderConfig {
         RenderConfig {
             font_family: font_family.map(|s| s.to_string()),
@@ -384,95 +403,50 @@ mod tests {
     }
 
     #[test]
-    fn build_html_no_options() {
+    fn build_html_defaults_have_no_extra_config() {
         let html = build_html(&cfg(None, None));
         assert!(!html.contains("  fontFamily:"));
         assert!(!html.contains("  theme:"));
-    }
-
-    #[test]
-    fn build_html_with_font() {
-        let html = build_html(&cfg(Some("Arial"), None));
-        assert!(html.contains("fontFamily: \"Arial\""));
-    }
-
-    #[test]
-    fn build_html_font_single_quote_is_escaped() {
-        let html = build_html(&cfg(Some("'; alert('xss'); '"), None));
-        assert!(html.contains("fontFamily: \"'; alert('xss'); '\""));
-        assert!(!html.contains("fontFamily: '"));
-    }
-
-    #[test]
-    fn build_html_font_double_quote_is_escaped() {
-        let html = build_html(&cfg(Some("Font\"Name"), None));
-        assert!(html.contains("fontFamily: \"Font\\\"Name\""));
-    }
-
-    #[test]
-    fn build_html_font_backslash_is_escaped() {
-        let html = build_html(&cfg(Some("Font\\Name"), None));
-        assert!(html.contains("fontFamily: \"Font\\\\Name\""));
-    }
-
-    #[test]
-    fn build_html_with_theme() {
-        let html = build_html(&cfg(None, Some("dark")));
-        assert!(html.contains("theme: \"dark\""));
-    }
-
-    #[test]
-    fn build_html_font_closing_script_tag_is_escaped() {
-        // `</script>` を埋め込まれても script ブロックから抜けられないこと
-        let html = build_html(&cfg(Some("</script><script>alert(1)//"), None));
-        assert!(!html.contains("</script><script>"));
-        assert!(html.contains("\\u003c/script\\u003e\\u003cscript\\u003e"));
-    }
-
-    #[test]
-    fn build_html_theme_closing_script_tag_is_escaped() {
-        let html = build_html(&cfg(None, Some("</script>")));
-        assert!(!html.contains("theme: \"</script>\""));
-        assert!(html.contains("\\u003c/script\\u003e"));
-    }
-
-    fn cfg_with_config_json(json: &str) -> RenderConfig {
-        RenderConfig {
-            config_json: Some(json.to_string()),
-            ..Default::default()
-        }
-    }
-
-    #[test]
-    fn build_html_no_config_json_uses_empty_spread() {
-        let html = build_html(&cfg(None, None));
         assert!(html.contains("...{}"));
     }
 
     #[test]
+    fn build_html_includes_font_and_theme() {
+        let html = build_html(&cfg(Some("Arial"), Some("dark")));
+        assert!(html.contains("fontFamily: \"Arial\""));
+        assert!(html.contains("theme: \"dark\""));
+    }
+
+    #[test]
     fn build_html_with_config_json() {
-        let html = build_html(&cfg_with_config_json(r#"{"flowchart":{"curve":"basis"}}"#));
+        let html = build_html(&RenderConfig {
+            config_json: Some(r#"{"flowchart":{"curve":"basis"}}"#.to_string()),
+            ..Default::default()
+        });
         assert!(html.contains(r#"...{"flowchart":{"curve":"basis"}}"#));
     }
 
     #[test]
-    fn build_html_config_json_closing_script_tag_is_escaped() {
-        let html = build_html(&cfg_with_config_json(r#"{"fontFamily":"a</script>b"}"#));
-        // config_json 内の </script> がエスケープされていること
-        assert!(html.contains("\\u003c/script\\u003e"));
-        // エスケープ前の文字列が config_json として埋め込まれていないこと
+    fn build_html_escapes_closing_script_tags_in_fields() {
+        // `</script>` を埋め込まれても script ブロックから抜けられないこと
+        let html = build_html(&RenderConfig {
+            theme: Some("</script>".to_string()),
+            config_json: Some(r#"{"fontFamily":"a</script>b"}"#.to_string()),
+            ..Default::default()
+        });
+        assert!(!html.contains("theme: \"</script>\""));
         assert!(!html.contains(r#""a</script>b""#));
+        assert_eq!(html.matches("\\u003c/script\\u003e").count(), 2);
     }
 
     #[test]
     fn build_html_config_json_cli_flag_comes_after_spread() {
         // spread より後に個別フラグが来ることで CLI フラグが優先されることを確認
-        let config = RenderConfig {
+        let html = build_html(&RenderConfig {
             theme: Some("forest".to_string()),
             config_json: Some(r#"{"theme":"dark"}"#.to_string()),
             ..Default::default()
-        };
-        let html = build_html(&config);
+        });
         let spread_pos = html.find("...{").unwrap();
         let theme_pos = html.find("theme: \"forest\"").unwrap();
         assert!(
@@ -486,61 +460,35 @@ mod tests {
     }
 
     #[test]
-    fn ipc_message_ready_ok() {
-        let m = parse_ipc(r#"{"type":"ready"}"#).unwrap();
-        assert!(matches!(m, IpcMessage::Ready));
+    fn ipc_message_valid_variants() {
+        assert!(matches!(
+            parse_ipc(r#"{"type":"ready"}"#).unwrap(),
+            IpcMessage::Ready
+        ));
+        assert!(matches!(
+            parse_ipc(r#"{"type":"svg","id":1,"svg":"<svg/>"}"#).unwrap(),
+            IpcMessage::Svg { id: 1, ref svg } if svg == "<svg/>"
+        ));
+        assert!(matches!(
+            parse_ipc(r#"{"type":"error","id":2,"error":"Lexical error"}"#).unwrap(),
+            IpcMessage::Error { id: 2, ref error } if error == "Lexical error"
+        ));
     }
 
     #[test]
-    fn ipc_message_svg_ok() {
-        let m = parse_ipc(r#"{"type":"svg","id":1,"svg":"<svg/>"}"#).unwrap();
-        assert!(matches!(m, IpcMessage::Svg { id: 1, ref svg } if svg == "<svg/>"));
-    }
-
-    #[test]
-    fn ipc_message_error_ok() {
-        let m = parse_ipc(r#"{"type":"error","id":2,"error":"Lexical error"}"#).unwrap();
-        assert!(matches!(m, IpcMessage::Error { id: 2, ref error } if error == "Lexical error"));
-    }
-
-    #[test]
-    fn ipc_message_unknown_type_err() {
-        assert!(parse_ipc(r#"{"type":"frobnicate"}"#).is_err());
-    }
-
-    #[test]
-    fn ipc_message_missing_type_err() {
-        assert!(parse_ipc(r#"{"id":1,"svg":"<svg/>"}"#).is_err());
-    }
-
-    #[test]
-    fn ipc_message_svg_missing_id_err() {
-        assert!(parse_ipc(r#"{"type":"svg","svg":"<svg/>"}"#).is_err());
-    }
-
-    #[test]
-    fn ipc_message_svg_missing_svg_err() {
-        assert!(parse_ipc(r#"{"type":"svg","id":1}"#).is_err());
-    }
-
-    #[test]
-    fn ipc_message_svg_non_numeric_id_err() {
-        assert!(parse_ipc(r#"{"type":"svg","id":"oops","svg":"<svg/>"}"#).is_err());
-    }
-
-    #[test]
-    fn ipc_message_svg_non_string_svg_err() {
-        assert!(parse_ipc(r#"{"type":"svg","id":1,"svg":42}"#).is_err());
-    }
-
-    #[test]
-    fn ipc_message_error_missing_field_err() {
-        assert!(parse_ipc(r#"{"type":"error","id":1}"#).is_err());
-    }
-
-    #[test]
-    fn ipc_message_error_non_string_err() {
-        assert!(parse_ipc(r#"{"type":"error","id":1,"error":42}"#).is_err());
+    fn ipc_message_invalid_variants_are_rejected() {
+        for raw in [
+            r#"{"type":"frobnicate"}"#,
+            r#"{"id":1,"svg":"<svg/>"}"#,
+            r#"{"type":"svg","svg":"<svg/>"}"#,
+            r#"{"type":"svg","id":1}"#,
+            r#"{"type":"svg","id":"oops","svg":"<svg/>"}"#,
+            r#"{"type":"svg","id":1,"svg":42}"#,
+            r#"{"type":"error","id":1}"#,
+            r#"{"type":"error","id":1,"error":42}"#,
+        ] {
+            assert!(parse_ipc(raw).is_err(), "expected error for {raw}");
+        }
     }
 
     // ------ Collector ------
@@ -563,6 +511,27 @@ mod tests {
         }
     }
 
+    fn dispatch(id: usize, content: &str) -> Action {
+        Action::Dispatch {
+            id,
+            content: content.to_string(),
+        }
+    }
+
+    fn emit_svg(id: usize, s: &str) -> Action {
+        Action::Emit {
+            id,
+            outcome: RenderOutcome::Svg(s.to_string()),
+        }
+    }
+
+    fn emit_err(id: usize, s: &str) -> Action {
+        Action::Emit {
+            id,
+            outcome: RenderOutcome::Error(s.to_string()),
+        }
+    }
+
     #[test]
     fn collector_not_ready_queues_without_dispatch() {
         let mut c = Collector::new();
@@ -573,13 +542,7 @@ mod tests {
     fn collector_ready_dispatches_queued_block() {
         let mut c = Collector::new();
         c.on_block(1, "a".into());
-        assert_eq!(
-            c.on_ipc(ready()),
-            vec![Action::Dispatch {
-                id: 1,
-                content: "a".into()
-            }]
-        );
+        assert_eq!(c.on_ipc(ready()), vec![dispatch(1, "a")]);
     }
 
     #[test]
@@ -591,16 +554,7 @@ mod tests {
 
         assert_eq!(
             c.on_ipc(svg(1, "<svg/>")),
-            vec![
-                Action::Emit {
-                    id: 1,
-                    outcome: RenderOutcome::Svg("<svg/>".into())
-                },
-                Action::Dispatch {
-                    id: 2,
-                    content: "b".into()
-                }
-            ]
+            vec![emit_svg(1, "<svg/>"), dispatch(2, "b")]
         );
     }
 
@@ -612,10 +566,7 @@ mod tests {
 
         assert_eq!(
             c.on_ipc(error(1, "Lexical error")),
-            vec![Action::Emit {
-                id: 1,
-                outcome: RenderOutcome::Error("Lexical error".into())
-            }]
+            vec![emit_err(1, "Lexical error")]
         );
     }
 
@@ -627,13 +578,7 @@ mod tests {
         c.on_input_end();
         assert_eq!(
             c.on_ipc(svg(1, "<svg/>")),
-            vec![
-                Action::Emit {
-                    id: 1,
-                    outcome: RenderOutcome::Svg("<svg/>".into())
-                },
-                Action::Done,
-            ]
+            vec![emit_svg(1, "<svg/>"), Action::Done]
         );
     }
 
@@ -645,50 +590,33 @@ mod tests {
     }
 
     #[test]
-    fn collector_unexpected_result_id_is_fatal() {
+    fn collector_unexpected_ipc_result_is_fatal() {
+        // A result arrives before any block was dispatched (pipeline NotReady).
+        assert!(matches!(
+            Collector::new().on_ipc(svg(1, "<svg/>")).as_slice(),
+            [Action::Fatal(Error::Ipc(_))]
+        ));
+
+        // A result arrives for a different id than the one in flight.
         let mut c = Collector::new();
         c.on_block(1, "a".into());
         c.on_ipc(ready()); // awaiting 1
-
-        let actions = c.on_ipc(svg(2, "<svg/>"));
-        assert_eq!(actions.len(), 1);
-        assert!(matches!(actions[0], Action::Fatal(Error::Ipc(_))));
-    }
-
-    #[test]
-    fn collector_result_before_dispatch_is_fatal() {
-        let mut c = Collector::new();
-        // No block dispatched yet (pipeline NotReady), but an IPC result arrives.
-        let actions = c.on_ipc(svg(1, "<svg/>"));
-        assert_eq!(actions.len(), 1);
-        assert!(matches!(actions[0], Action::Fatal(Error::Ipc(_))));
+        assert!(matches!(
+            c.on_ipc(svg(2, "<svg/>")).as_slice(),
+            [Action::Fatal(Error::Ipc(_))]
+        ));
     }
 
     #[test]
     fn collector_blocks_arriving_after_ready_are_dispatched_in_order() {
         let mut c = Collector::new();
         c.on_ipc(ready()); // Idle, queue empty -> no action yet
-        assert_eq!(
-            c.on_block(1, "a".into()),
-            vec![Action::Dispatch {
-                id: 1,
-                content: "a".into()
-            }]
-        );
+        assert_eq!(c.on_block(1, "a".into()), vec![dispatch(1, "a")]);
         // Second block queues behind the in-flight render.
         assert_eq!(c.on_block(2, "b".into()), vec![]);
         assert_eq!(
             c.on_ipc(svg(1, "<svg/>")),
-            vec![
-                Action::Emit {
-                    id: 1,
-                    outcome: RenderOutcome::Svg("<svg/>".into())
-                },
-                Action::Dispatch {
-                    id: 2,
-                    content: "b".into()
-                }
-            ]
+            vec![emit_svg(1, "<svg/>"), dispatch(2, "b")]
         );
     }
 }

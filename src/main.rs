@@ -252,27 +252,23 @@ mod tests {
     }
 
     #[test]
-    fn help_long() {
-        let (_, cmd) = parse_args(args(&["--help"])).unwrap();
-        assert!(matches!(cmd, Command::Help));
-    }
-
-    #[test]
-    fn help_short() {
-        let (_, cmd) = parse_args(args(&["-h"])).unwrap();
-        assert!(matches!(cmd, Command::Help));
-    }
-
-    #[test]
-    fn version_long() {
-        let (_, cmd) = parse_args(args(&["--version"])).unwrap();
-        assert!(matches!(cmd, Command::Version));
-    }
-
-    #[test]
-    fn version_short() {
-        let (_, cmd) = parse_args(args(&["-v"])).unwrap();
-        assert!(matches!(cmd, Command::Version));
+    fn help_and_version_flags() {
+        assert!(matches!(
+            parse_args(args(&["--help"])).unwrap().1,
+            Command::Help
+        ));
+        assert!(matches!(
+            parse_args(args(&["-h"])).unwrap().1,
+            Command::Help
+        ));
+        assert!(matches!(
+            parse_args(args(&["--version"])).unwrap().1,
+            Command::Version
+        ));
+        assert!(matches!(
+            parse_args(args(&["-v"])).unwrap().1,
+            Command::Version
+        ));
     }
 
     #[test]
@@ -282,77 +278,45 @@ mod tests {
     }
 
     #[test]
-    fn render_with_file() {
-        let (_, cmd) = parse_args(args(&["diagram.mmd"])).unwrap();
+    fn flags_and_file_are_parsed() {
+        let (opts, cmd) = parse_args(args(&[
+            "--font",
+            "Arial",
+            "--theme",
+            "dark",
+            "--look",
+            "handDrawn",
+            "--config",
+            "config.json",
+            "--meta",
+            "diagram.mmd",
+        ]))
+        .unwrap();
+        assert_eq!(opts.font_family, Some("Arial".to_string()));
+        assert_eq!(opts.theme, Some("dark".to_string()));
+        assert_eq!(opts.look, Some("handDrawn".to_string()));
+        assert_eq!(opts.config_file, Some("config.json".to_string()));
+        assert!(opts.show_meta);
         assert!(
             matches!(cmd, Command::Render { ref file } if file.as_deref() == Some("diagram.mmd"))
         );
     }
 
     #[test]
-    fn font_flag() {
-        let (opts, _) = parse_args(args(&["--font", "Arial"])).unwrap();
-        assert_eq!(opts.font_family, Some("Arial".to_string()));
+    fn flags_missing_value_is_error() {
+        for flag in ["--font", "--theme", "--look", "--config"] {
+            assert!(
+                parse_args(args(&[flag])).is_err(),
+                "{flag} requires a value"
+            );
+        }
     }
 
     #[test]
-    fn font_flag_with_file() {
-        let (opts, cmd) = parse_args(args(&["--font", "Arial", "diagram.mmd"])).unwrap();
-        assert_eq!(opts.font_family, Some("Arial".to_string()));
-        assert!(matches!(cmd, Command::Render { .. }));
-    }
-
-    #[test]
-    fn font_flag_missing_value_is_error() {
-        assert!(parse_args(args(&["--font"])).is_err());
-    }
-
-    #[test]
-    fn theme_flag() {
-        let (opts, _) = parse_args(args(&["--theme", "dark"])).unwrap();
-        assert_eq!(opts.theme, Some("dark".to_string()));
-    }
-
-    #[test]
-    fn theme_flag_missing_value_is_error() {
-        assert!(parse_args(args(&["--theme"])).is_err());
-    }
-
-    #[test]
-    fn look_flag() {
-        let (opts, _) = parse_args(args(&["--look", "handDrawn"])).unwrap();
-        assert_eq!(opts.look, Some("handDrawn".to_string()));
-    }
-
-    #[test]
-    fn look_flag_missing_value_is_error() {
-        assert!(parse_args(args(&["--look"])).is_err());
-    }
-
-    #[test]
-    fn config_flag() {
-        let (opts, _) = parse_args(args(&["--config", "config.json"])).unwrap();
-        assert_eq!(opts.config_file, Some("config.json".to_string()));
-    }
-
-    #[test]
-    fn config_flag_missing_value_is_error() {
-        assert!(parse_args(args(&["--config"])).is_err());
-    }
-
-    #[test]
-    fn too_many_files_is_error() {
-        assert!(parse_args(args(&["a.mmd", "b.mmd"])).is_err());
-    }
-
-    #[test]
-    fn unknown_flag_is_error() {
+    fn invalid_arguments_are_errors() {
         assert!(parse_args(args(&["--unknown"])).is_err());
-    }
-
-    #[test]
-    fn unknown_flag_with_file_is_error() {
         assert!(parse_args(args(&["--unknown", "diagram.mmd"])).is_err());
+        assert!(parse_args(args(&["a.mmd", "b.mmd"])).is_err());
     }
 
     // ------ read_blocks ------
@@ -364,52 +328,28 @@ mod tests {
     }
 
     #[test]
-    fn reader_empty_input() {
-        let (blocks, result) = run_reader(b"");
+    fn read_blocks_splits_on_nul() {
+        let cases: &[(&[u8], &[&str])] = &[
+            (b"", &[]),
+            (b"graph LR\n  A --> B", &["graph LR\n  A --> B"]),
+            (b"m1\0m2", &["m1", "m2"]),
+            (b"a\0b\0c", &["a", "b", "c"]),
+            (b"m1\0m2\0", &["m1", "m2"]), // single trailing \0 is dropped
+            (b"m1\0m2\0\0", &["m1", "m2", ""]),
+        ];
+        for (input, expected) in cases {
+            let (blocks, result) = run_reader(input);
+            assert_eq!(blocks, *expected, "input: {input:?}");
+            assert_eq!(result, Ok(()));
+        }
+    }
+
+    #[test]
+    fn read_blocks_invalid_utf8_is_error() {
+        let (blocks, result) = run_reader(&[0xff, 0xff]);
         assert!(blocks.is_empty());
-        assert_eq!(result, Ok(()));
-    }
-
-    #[test]
-    fn reader_single_block() {
-        let (blocks, result) = run_reader(b"graph LR\n  A --> B");
-        assert_eq!(blocks, vec!["graph LR\n  A --> B"]);
-        assert_eq!(result, Ok(()));
-    }
-
-    #[test]
-    fn reader_two_blocks() {
-        let (blocks, result) = run_reader(b"m1\0m2");
-        assert_eq!(blocks, vec!["m1", "m2"]);
-        assert_eq!(result, Ok(()));
-    }
-
-    #[test]
-    fn reader_three_blocks() {
-        let (blocks, _) = run_reader(b"a\0b\0c");
-        assert_eq!(blocks, vec!["a", "b", "c"]);
-    }
-
-    #[test]
-    fn reader_trailing_null_is_dropped() {
-        let (blocks, _) = run_reader(b"m1\0m2\0");
-        assert_eq!(blocks, vec!["m1", "m2"]);
-    }
-
-    #[test]
-    fn reader_double_trailing_null_yields_one_empty() {
-        let (blocks, _) = run_reader(b"m1\0m2\0\0");
-        assert_eq!(blocks, vec!["m1", "m2", ""]);
-    }
-
-    #[test]
-    fn reader_invalid_utf8_stops_reader() {
-        let (_, result) = run_reader(&[0xff, 0xff]);
         assert!(result.is_err());
-    }
 
-    #[test]
-    fn reader_invalid_utf8_after_separator() {
         let (blocks, result) = run_reader(&[b'a', 0, 0xff, 0xff]);
         assert_eq!(blocks, vec!["a"]);
         assert!(result.is_err());
