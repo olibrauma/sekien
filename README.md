@@ -129,6 +129,9 @@ Protocol spec: [protocol.md](util/docs/protocol.md). Design rationale: [DESIGN.m
 
 **wry** provides the OS-native WebView; **tao** handles the event loop and window management.
 
+sekien is also a Rust library: [`render_stream`](https://docs.rs/sekien) renders
+diagrams directly, without going through the `\0` wire protocol.
+
 ## License
 
 Licensed under either of
