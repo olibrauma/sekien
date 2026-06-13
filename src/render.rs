@@ -426,7 +426,7 @@ mod tests {
 
     #[test]
     fn build_html_escapes_closing_script_tags_in_fields() {
-        // `</script>` を埋め込まれても script ブロックから抜けられないこと
+        // Embedding `</script>` must not break out of the script block.
         let html = build_html(&RenderConfig {
             theme: Some("</script>".to_string()),
             config_json: Some(r#"{"fontFamily":"a</script>b"}"#.to_string()),
@@ -439,7 +439,7 @@ mod tests {
 
     #[test]
     fn build_html_config_json_cli_flag_comes_after_spread() {
-        // spread より後に個別フラグが来ることで CLI フラグが優先されることを確認
+        // Individual flags after the spread confirm CLI flags take precedence.
         let html = build_html(&RenderConfig {
             theme: Some("forest".to_string()),
             config_json: Some(r#"{"theme":"dark"}"#.to_string()),

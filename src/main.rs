@@ -3,7 +3,7 @@ use sekien::{render_stream, RenderConfig, RenderOutcome, MERMAID_VERSION};
 use std::env;
 use std::fs;
 use std::io::{self, BufRead, BufReader, Read, Write};
-use std::sync::{mpsc, Arc, Mutex};
+use std::sync::mpsc;
 use std::thread;
 
 fn usage() -> String {
@@ -198,17 +198,11 @@ fn main() -> Result<()> {
             };
 
             let (tx, rx) = mpsc::channel::<String>();
-            let read_error: Arc<Mutex<Option<String>>> = Arc::new(Mutex::new(None));
-            {
-                let read_error = read_error.clone();
-                thread::spawn(move || {
-                    if let Err(e) = read_blocks(reader, |s| {
-                        let _ = tx.send(s);
-                    }) {
-                        *read_error.lock().unwrap() = Some(e);
-                    }
-                });
-            }
+            let handle = thread::spawn(move || {
+                read_blocks(reader, |s| {
+                    let _ = tx.send(s);
+                })
+            });
 
             let show_meta = options.show_meta;
             let mut wrote_svg = false;
@@ -234,8 +228,7 @@ fn main() -> Result<()> {
                 }
             })?;
 
-            let err = read_error.lock().unwrap().take();
-            if let Some(e) = err {
+            if let Err(e) = handle.join().unwrap() {
                 bail!(e);
             }
         }
