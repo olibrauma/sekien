@@ -1,5 +1,6 @@
 use anyhow::{bail, Context, Result};
-use sekien::{render_stream, RenderConfig, RenderOutcome, MERMAID_VERSION};
+use sekien::{render_stream, RenderOutcome, MERMAID_VERSION};
+use serde_json::{json, Value};
 use std::env;
 use std::fs;
 use std::io::{self, BufRead, BufReader, Read, Write};
@@ -102,15 +103,37 @@ fn parse_args(raw: Vec<String>) -> Result<(Options, Command)> {
     ))
 }
 
-fn load_config_json(path: &str) -> Result<String> {
+fn load_config_value(path: &str) -> Result<Value> {
     let raw =
         fs::read_to_string(path).with_context(|| format!("cannot read config file '{path}'"))?;
-    let value: serde_json::Value =
+    let value: Value =
         serde_json::from_str(&raw).with_context(|| format!("invalid JSON in '{path}'"))?;
     if !value.is_object() {
         bail!("'{path}': expected a JSON object");
     }
-    Ok(value.to_string())
+    Ok(value)
+}
+
+/// Builds the `config_json` string passed to `render_stream`, from `--config
+/// <file>` and the `--font`/`--theme`/`--look` shorthand flags, which take
+/// precedence over (and are merged into) the config file's
+/// `fontFamily`/`theme`/`look` keys.
+fn build_config_json(options: &Options) -> Result<String> {
+    let mut config = match options.config_file.as_deref() {
+        Some(path) => load_config_value(path)?,
+        None => json!({}),
+    };
+    let obj = config.as_object_mut().expect("validated as object");
+    for (key, value) in [
+        ("fontFamily", &options.font_family),
+        ("theme", &options.theme),
+        ("look", &options.look),
+    ] {
+        if let Some(value) = value {
+            obj.insert(key.to_string(), Value::String(value.clone()));
+        }
+    }
+    Ok(config.to_string())
 }
 
 /// Reads `reader`, splits on `\0`, and calls `on_block` for each block (in order).
@@ -167,18 +190,7 @@ fn main() -> Result<()> {
     let raw: Vec<String> = env::args().skip(1).collect();
     let (options, command) = parse_args(raw)?;
 
-    let config_json = options
-        .config_file
-        .as_deref()
-        .map(load_config_json)
-        .transpose()?;
-
-    let config = RenderConfig {
-        font_family: options.font_family,
-        theme: options.theme,
-        look: options.look,
-        config_json,
-    };
+    let config_json = build_config_json(&options)?;
 
     match command {
         Command::Help => println!("{}", usage()),
@@ -207,7 +219,7 @@ fn main() -> Result<()> {
             let show_meta = options.show_meta;
             let mut wrote_svg = false;
             let mut wrote_err = false;
-            render_stream(rx, &config, move |id, outcome| match outcome {
+            render_stream(rx, Some(&config_json), move |id, outcome| match outcome {
                 RenderOutcome::Svg(svg) => {
                     if let Err(e) =
                         write_framed(io::stdout().lock(), id, &svg, show_meta, wrote_svg)
@@ -294,6 +306,67 @@ mod tests {
         assert!(
             matches!(cmd, Command::Render { ref file } if file.as_deref() == Some("diagram.mmd"))
         );
+    }
+
+    #[test]
+    fn build_config_json_defaults_to_empty_object() {
+        let opts = Options::default();
+        assert_eq!(build_config_json(&opts).unwrap(), "{}");
+    }
+
+    #[test]
+    fn build_config_json_includes_shorthand_flags() {
+        let opts = Options {
+            font_family: Some("Arial".to_string()),
+            theme: Some("dark".to_string()),
+            look: Some("handDrawn".to_string()),
+            ..Default::default()
+        };
+        let json: Value = build_config_json(&opts).unwrap().parse().unwrap();
+        assert_eq!(json["fontFamily"], "Arial");
+        assert_eq!(json["theme"], "dark");
+        assert_eq!(json["look"], "handDrawn");
+    }
+
+    #[test]
+    fn build_config_json_flags_override_config_file() {
+        let dir = std::env::temp_dir().join(format!(
+            "sekien-test-config-{:?}",
+            std::thread::current().id()
+        ));
+        fs::create_dir_all(&dir).unwrap();
+        let path = dir.join("config.json");
+        fs::write(&path, r#"{"theme":"dark","flowchart":{"curve":"basis"}}"#).unwrap();
+
+        let opts = Options {
+            theme: Some("forest".to_string()),
+            config_file: Some(path.to_str().unwrap().to_string()),
+            ..Default::default()
+        };
+        let json: Value = build_config_json(&opts).unwrap().parse().unwrap();
+        assert_eq!(json["theme"], "forest");
+        assert_eq!(json["flowchart"]["curve"], "basis");
+
+        fs::remove_dir_all(&dir).unwrap();
+    }
+
+    #[test]
+    fn build_config_json_rejects_non_object_config_file() {
+        let dir = std::env::temp_dir().join(format!(
+            "sekien-test-config-bad-{:?}",
+            std::thread::current().id()
+        ));
+        fs::create_dir_all(&dir).unwrap();
+        let path = dir.join("config.json");
+        fs::write(&path, "[1, 2, 3]").unwrap();
+
+        let opts = Options {
+            config_file: Some(path.to_str().unwrap().to_string()),
+            ..Default::default()
+        };
+        assert!(build_config_json(&opts).is_err());
+
+        fs::remove_dir_all(&dir).unwrap();
     }
 
     #[test]

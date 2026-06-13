@@ -86,10 +86,13 @@ API from `src/render.rs`, whose sole entry point is
 ```rust
 fn render_stream(
     diagrams: impl IntoIterator<Item = String> + Send + 'static,
-    config: &RenderConfig,
+    config_json: Option<&str>,
     on_result: impl FnMut(usize, RenderOutcome) + Send + 'static,
 ) -> Result<()>;
 ```
+
+`config_json` is a JSON object string spread into mermaid.initialize() (e.g.
+`{"theme":"dark","fontFamily":"Arial"}`), or `None` for defaults.
 
 It renders each `String` in `diagrams` to SVG, one at a time, and calls
 `on_result(id, outcome)` for each — `id` is the 1-origin position of the

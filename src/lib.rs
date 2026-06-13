@@ -4,10 +4,10 @@
 //! [`render_stream`], the single entry point for rendering.
 //!
 //! ```no_run
-//! use sekien::{render_stream, RenderConfig, RenderOutcome};
+//! use sekien::{render_stream, RenderOutcome};
 //!
 //! let diagrams = vec!["graph LR\n  A --> B".to_string()];
-//! render_stream(diagrams, &RenderConfig::default(), |id, outcome| {
+//! render_stream(diagrams, None, |id, outcome| {
 //!     match outcome {
 //!         RenderOutcome::Svg(svg) => println!("diagram {id}: {svg}"),
 //!         RenderOutcome::Error(e) => eprintln!("diagram {id} error: {e}"),
@@ -21,4 +21,4 @@ mod render;
 #[cfg(target_os = "linux")]
 mod linux_display;
 
-pub use render::{render_stream, Error, RenderConfig, RenderOutcome, Result, MERMAID_VERSION};
+pub use render::{render_stream, Error, RenderOutcome, Result, MERMAID_VERSION};

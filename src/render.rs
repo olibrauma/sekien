@@ -52,16 +52,6 @@ const HTML_TEMPLATE: &str = include_str!("../assets/render.html");
 /// Version string extracted from `mermaid.min.js` by `build.rs` at compile time.
 pub const MERMAID_VERSION: &str = env!("MERMAID_VERSION");
 
-/// Rendering options, passed to mermaid.initialize().
-#[derive(Clone, Default)]
-pub struct RenderConfig {
-    pub font_family: Option<String>,
-    pub theme: Option<String>,
-    pub look: Option<String>,
-    /// Normalised JSON object string, spread into mermaid.initialize().
-    pub config_json: Option<String>,
-}
-
 /// Result of rendering a single diagram.
 #[derive(Debug, PartialEq, Eq)]
 pub enum RenderOutcome {
@@ -75,14 +65,22 @@ pub enum RenderOutcome {
 /// which is reported via [`RenderOutcome::Error`]).
 #[derive(Debug, thiserror::Error, PartialEq, Eq)]
 pub enum Error {
+    /// Linux only: failed to start the internal Xvfb display.
     #[error("failed to initialize display: {0}")]
     Display(String),
+    /// Failed to create the (hidden) WebView window.
     #[error("failed to create window: {0}")]
     Window(String),
+    /// Failed to create the WebView.
     #[error("failed to create webview: {0}")]
     WebView(String),
+    /// Received a malformed or unexpected IPC message from the WebView.
     #[error("malformed IPC from webview: {0}")]
     Ipc(String),
+    /// `config_json` did not parse as a JSON object. Returned before any
+    /// display/window/WebView initialisation is attempted.
+    #[error("invalid config_json: {0}")]
+    Config(String),
 }
 
 pub type Result<T> = std::result::Result<T, Error>;
@@ -105,32 +103,29 @@ fn escape_for_script(s: &str) -> String {
     s.replace('<', "\\u003c").replace('>', "\\u003e")
 }
 
-fn js_string_in_html(s: &str) -> String {
-    escape_for_script(&serde_json::to_string(s).expect("serialize config field"))
+/// Validates that `config_json` (if present) parses as a JSON object.
+///
+/// A `config_json` that isn't a valid JS object literal breaks
+/// `mermaid.initialize()` in the WebView before it can signal readiness,
+/// which would otherwise hang [`render_stream`] forever instead of
+/// returning an error.
+fn validate_config_json(config_json: Option<&str>) -> Result<()> {
+    if let Some(s) = config_json {
+        let value: serde_json::Value =
+            serde_json::from_str(s).map_err(|e| Error::Config(e.to_string()))?;
+        if !value.is_object() {
+            return Err(Error::Config(format!("expected a JSON object, got: {s}")));
+        }
+    }
+    Ok(())
 }
 
-fn build_html(config: &RenderConfig) -> String {
-    let extra_config: String = [
-        ("theme", &config.theme),
-        ("fontFamily", &config.font_family),
-        ("look", &config.look),
-    ]
-    .iter()
-    .filter_map(|(k, v)| {
-        v.as_deref()
-            .map(|v| format!("  {k}: {},\n", js_string_in_html(v)))
-    })
-    .collect();
-
-    let config_json = config
-        .config_json
-        .as_deref()
-        .map_or_else(|| "{}".to_string(), escape_for_script);
+fn build_html(config_json: Option<&str>) -> String {
+    let config_json = config_json.map_or_else(|| "{}".to_string(), escape_for_script);
 
     HTML_TEMPLATE
         .replace("{{MERMAID_JS}}", MERMAID_JS)
         .replace("{{CONFIG_JSON}}", &config_json)
-        .replace("{{EXTRA_CONFIG}}", &extra_config)
 }
 
 fn create_window(event_loop: &EventLoopWindowTarget<LoopEvent>) -> Result<Window> {
@@ -291,15 +286,23 @@ impl Collector {
 /// `diagrams`'s iteration order; results are reported in that same order
 /// (rendering is strictly sequential).
 ///
-/// Returns `Err` only for fatal failures of sekien itself (display
-/// initialisation, WebView creation, malformed IPC). Errors raised by
-/// `on_result` are the caller's responsibility — `on_result` may, for example,
-/// call [`std::process::exit`] directly.
+/// Returns `Err` only for fatal failures of sekien itself: an invalid
+/// `config_json` (checked up front), or display initialisation, WebView
+/// creation, and malformed IPC (which can only occur once rendering has
+/// started). Errors raised by `on_result` are the caller's responsibility —
+/// `on_result` may, for example, call [`std::process::exit`] directly.
+///
+/// `config_json` is a JSON object string spread into mermaid.initialize()
+/// (e.g. `{"theme":"dark","fontFamily":"Arial"}`), or `None` for defaults.
+/// If it doesn't parse as a JSON object, returns `Err(Error::Config(_))`
+/// immediately.
 pub fn render_stream(
     diagrams: impl IntoIterator<Item = String> + Send + 'static,
-    config: &RenderConfig,
+    config_json: Option<&str>,
     mut on_result: impl FnMut(usize, RenderOutcome) + Send + 'static,
 ) -> Result<()> {
+    validate_config_json(config_json)?;
+
     #[cfg(target_os = "linux")]
     linux_display::ensure_display().map_err(|e| Error::Display(format!("{e:#}")))?;
 
@@ -307,7 +310,7 @@ pub fn render_stream(
     let proxy = event_loop.create_proxy();
 
     let window = create_window(&event_loop)?;
-    let webview = create_webview(&window, build_html(config), proxy.clone())?;
+    let webview = create_webview(&window, build_html(config_json), proxy.clone())?;
 
     {
         let proxy = proxy.clone();
@@ -382,75 +385,46 @@ mod tests {
     }
 
     #[test]
-    fn js_string_in_html_escapes_quotes_and_backslashes() {
-        assert_eq!(js_string_in_html("Arial"), "\"Arial\"");
-        assert_eq!(js_string_in_html("Font\"Name"), "\"Font\\\"Name\"");
-        assert_eq!(js_string_in_html("Font\\Name"), "\"Font\\\\Name\"");
-        assert_eq!(
-            js_string_in_html("'; alert('xss'); '"),
-            "\"'; alert('xss'); '\""
-        );
-    }
-
-    fn cfg(font_family: Option<&str>, theme: Option<&str>) -> RenderConfig {
-        RenderConfig {
-            font_family: font_family.map(|s| s.to_string()),
-            theme: theme.map(|s| s.to_string()),
-            ..Default::default()
-        }
+    fn validate_config_json_accepts_none_and_objects() {
+        assert!(validate_config_json(None).is_ok());
+        assert!(validate_config_json(Some("{}")).is_ok());
+        assert!(validate_config_json(Some(r#"{"theme":"dark"}"#)).is_ok());
     }
 
     #[test]
-    fn build_html_defaults_have_no_extra_config() {
-        let html = build_html(&cfg(None, None));
-        assert!(!html.contains("  fontFamily:"));
-        assert!(!html.contains("  theme:"));
+    fn validate_config_json_rejects_non_objects_and_invalid_json() {
+        assert!(matches!(
+            validate_config_json(Some("not json")),
+            Err(Error::Config(_))
+        ));
+        assert!(matches!(
+            validate_config_json(Some("[1, 2, 3]")),
+            Err(Error::Config(_))
+        ));
+        assert!(matches!(
+            validate_config_json(Some(r#""a string""#)),
+            Err(Error::Config(_))
+        ));
+    }
+
+    #[test]
+    fn build_html_defaults_to_empty_config() {
+        let html = build_html(None);
         assert!(html.contains("...{}"));
     }
 
     #[test]
-    fn build_html_includes_font_and_theme() {
-        let html = build_html(&cfg(Some("Arial"), Some("dark")));
-        assert!(html.contains("fontFamily: \"Arial\""));
-        assert!(html.contains("theme: \"dark\""));
-    }
-
-    #[test]
     fn build_html_with_config_json() {
-        let html = build_html(&RenderConfig {
-            config_json: Some(r#"{"flowchart":{"curve":"basis"}}"#.to_string()),
-            ..Default::default()
-        });
+        let html = build_html(Some(r#"{"flowchart":{"curve":"basis"}}"#));
         assert!(html.contains(r#"...{"flowchart":{"curve":"basis"}}"#));
     }
 
     #[test]
-    fn build_html_escapes_closing_script_tags_in_fields() {
+    fn build_html_escapes_closing_script_tags_in_config_json() {
         // Embedding `</script>` must not break out of the script block.
-        let html = build_html(&RenderConfig {
-            theme: Some("</script>".to_string()),
-            config_json: Some(r#"{"fontFamily":"a</script>b"}"#.to_string()),
-            ..Default::default()
-        });
-        assert!(!html.contains("theme: \"</script>\""));
-        assert!(!html.contains(r#""a</script>b""#));
-        assert_eq!(html.matches("\\u003c/script\\u003e").count(), 2);
-    }
-
-    #[test]
-    fn build_html_config_json_cli_flag_comes_after_spread() {
-        // Individual flags after the spread confirm CLI flags take precedence.
-        let html = build_html(&RenderConfig {
-            theme: Some("forest".to_string()),
-            config_json: Some(r#"{"theme":"dark"}"#.to_string()),
-            ..Default::default()
-        });
-        let spread_pos = html.find("...{").unwrap();
-        let theme_pos = html.find("theme: \"forest\"").unwrap();
-        assert!(
-            spread_pos < theme_pos,
-            "spread must appear before CLI flag override"
-        );
+        let html = build_html(Some(r#"{"theme":"</script>"}"#));
+        assert!(!html.contains("</script>\""));
+        assert!(html.contains("\\u003c/script\\u003e"));
     }
 
     fn parse_ipc(s: &str) -> std::result::Result<IpcMessage, serde_json::Error> {
