@@ -2,10 +2,11 @@
 
 Sekien draws Mermaids natively.
 
-Mermaid → SVG conversion on the command line, using the OS-native WebView
-instead of bundling Chromium — lighter, faster, and smaller than
-[`mmdc`](https://github.com/mermaid-js/mermaid-cli). A long-lived streaming
-process, built for pipelines.
+Mermaid → SVG conversion on the command line.
+
+- **Lighter, faster, and smaller** than [`mmdc`](https://github.com/mermaid-js/mermaid-cli) —
+  uses the OS-native WebView instead of bundling Chromium
+- **Pipeline-friendly** — runs as a long-lived streaming process
 
 ## Install
 
