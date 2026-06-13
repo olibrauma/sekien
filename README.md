@@ -105,29 +105,14 @@ The desktop environment (X11 / Wayland / Xwayland) and `$DISPLAY` are ignored.
 By using the OS-native WebView rather than bundling Chromium, sekien is
 significantly lighter than `mmdc`.
 
-- Figures are the median of the 3 diagrams in `util/bench/`. mmdc 11.14.0 / sekien 0.1.0 (mermaid.js 11.14.0)
+- Figures are the median of the 3 diagrams in `util/bench/` (Linux x86_64). mmdc 11.14.0 / sekien 0.2.0 (mermaid.js 11.14.0)
 - Max RSS includes all child processes (Xvfb/WebKit/Chromium) — see `util/bench/bench.sh`
 
-### Binary size
-
-| Platform | sekien | mmdc | Advantage |
+| Metric | sekien | mmdc | Advantage |
 |---|---|---|---|
-| Mac (Apple Silicon) | **~10 MB** | 330 MB | 97% smaller |
-| Linux | **4.8 MB** | 401 MB | 99% smaller |
-
-### Speed
-
-| Platform | sekien | mmdc | Advantage |
-|---|---|---|---|
-| Mac (Apple Silicon) | **~360 ms** | ~1.1 s | **67% faster** |
-| Linux | **~1.1 s** | ~1.6 s | **31% faster** |
-
-### Memory
-
-| Platform | sekien | mmdc | Advantage |
-|---|---|---|---|
-| Mac (Apple Silicon) | **~90 MB** | ~690 MB | **87% less** |
-| Linux | **~430 MB** | ~630 MB | **32% less** |
+| Binary size | **5.0 MB** | 401 MB | 99% smaller |
+| Speed | **~1.3 s** | ~2.3 s | **42% faster** |
+| Memory (RSS) | **~430 MB** | ~630 MB | **32% less** |
 
 ### Pipeline composability
 
