@@ -116,6 +116,13 @@ significantly lighter than `mmdc`.
 | Speed | **~0.8 s** | ~1.1 s | **30% faster** |
 | Memory (RSS) | **~440 MB** | ~620 MB | **28% less** |
 
+On macOS (Apple Silicon), same diagrams/versions:
+
+| Metric | sekien | mmdc | Advantage |
+|---|---|---|---|
+| Speed | **~0.4 s** | ~1.1 s | **67% faster** |
+| Memory (RSS) | **~80 MB** | ~690 MB | **88% less** |
+
 ### Pipeline composability
 
 sekien is a single long-lived process, like `cat`: feed it N diagrams over
