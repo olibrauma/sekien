@@ -18,7 +18,16 @@ mermaid.initialize({
 window.renderMermaid = async function(id, code) {
   try {
     const { svg } = await mermaid.render('d' + id, code);
-    window.ipc.postMessage(JSON.stringify({ type: 'svg', id: id, svg: svg }));
+    // mermaid.render() returns an HTML-serialized SVG string: attributes
+    // like xlink:href are present without the xmlns:xlink declaration that
+    // strict XML parsers (e.g. usvg, used by typst) require. Round-trip
+    // through the DOM (HTML parsing, which assigns the correct namespace to
+    // foreign attributes per the HTML5 spec) and re-serialize as XML to fix
+    // this generally, for any namespaced attribute.
+    const container = document.createElement('div');
+    container.innerHTML = svg;
+    const xml = new XMLSerializer().serializeToString(container.firstElementChild);
+    window.ipc.postMessage(JSON.stringify({ type: 'svg', id: id, svg: xml }));
   } catch(e) {
     window.ipc.postMessage(JSON.stringify({ type: 'error', id: id, error: e.message }));
   }
