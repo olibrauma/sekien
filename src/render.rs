@@ -296,6 +296,15 @@ impl Collector {
 /// (e.g. `{"theme":"dark","fontFamily":"Arial"}`), or `None` for defaults.
 /// If it doesn't parse as a JSON object, returns `Err(Error::Config(_))`
 /// immediately.
+///
+/// # Main thread only
+///
+/// `render_stream` creates and runs a `tao` event loop, which panics if not
+/// called from the process's main thread. It blocks the calling thread until
+/// rendering is complete. Callers that need to do other work concurrently
+/// (e.g. while diagrams are being fed in from `diagrams`'s iterator, which
+/// runs on its own thread) must do that work on a thread other than main —
+/// `render_stream` itself must run on main.
 pub fn render_stream(
     diagrams: impl IntoIterator<Item = String> + Send + 'static,
     config_json: Option<&str>,

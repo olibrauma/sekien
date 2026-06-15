@@ -3,6 +3,10 @@
 //! The CLI (`src/main.rs`) and this library are both thin layers over
 //! [`render_stream`], the single entry point for rendering.
 //!
+//! [`render_stream`] must be called from the process's main thread (it runs a
+//! `tao` event loop, which panics on any other thread) and blocks the calling
+//! thread until done. Run any concurrent work on other threads.
+//!
 //! ```no_run
 //! use sekien::{render_stream, RenderOutcome};
 //!

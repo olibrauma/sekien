@@ -166,6 +166,13 @@ long-lived host process (e.g. sekien-pandoc) and the caller continues
 normally afterwards. `std::process::exit` is only called from the CLI
 (`main.rs`), for its own fatal errors and write failures.
 
+`EventLoopBuilder::build()` panics if not called on the main thread (tao
+imposes this on all platforms for cross-platform consistency, not just where
+the OS requires it — see `EventLoopBuilderExtUnix::with_any_thread`, which
+`render_stream` does not use). So `render_stream` must run on the host
+process's main thread; concurrent work (e.g. the feeder thread that relays
+`diagrams` into the event loop) must happen on other threads.
+
 ### Linux display resolution
 
 `ensure_display()` (in `linux_display.rs`) is called at the start of
