@@ -114,13 +114,9 @@ echo ""
 
 if $mmdc_present; then
     puppeteer_cfg="$SCRIPT_DIR/puppeteer-config.json"
-    printf "| diagram | sekien time | mmdc time | sekien RSS | mmdc RSS |\n"
-    printf "|---|---|---|---|---|\n"
-else
-    printf "| diagram | time | RSS |\n"
-    printf "|---|---|---|\n"
 fi
 
+rows=()
 for diag in "${DIAGRAMS[@]}"; do
     diag_path="$DIAGRAMS_DIR/$diag"
     [ -f "$diag_path" ] || { echo "warning: $diag not found, skipping" >&2; continue; }
@@ -130,11 +126,20 @@ for diag in "${DIAGRAMS[@]}"; do
 
     if $mmdc_present; then
         read -r m_ms m_rss < <(bench mmdc -p "$puppeteer_cfg" -i "$diag_path" -o "$TMPSVG")
-        printf "| %s | %s | %s | %s | %s |\n" \
+        rows+=("$(printf "| %s | %s | %s | %s | %s |" \
             "$diag" "$(fmt_ms "$s_ms")" "$(fmt_ms "$m_ms")" \
-            "$(fmt_rss "$s_rss")" "$(fmt_rss "$m_rss")"
+            "$(fmt_rss "$s_rss")" "$(fmt_rss "$m_rss")")")
     else
-        printf "| %s | %s | %s |\n" "$diag" "$(fmt_ms "$s_ms")" "$(fmt_rss "$s_rss")"
+        rows+=("$(printf "| %s | %s | %s |" "$diag" "$(fmt_ms "$s_ms")" "$(fmt_rss "$s_rss")")")
     fi
     echo >&2
 done
+
+if $mmdc_present; then
+    printf "| diagram | sekien time | mmdc time | sekien RSS | mmdc RSS |\n"
+    printf "|---|---|---|---|---|\n"
+else
+    printf "| diagram | time | RSS |\n"
+    printf "|---|---|---|\n"
+fi
+printf "%s\n" "${rows[@]}"
