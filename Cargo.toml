@@ -1,6 +1,6 @@
 [package]
 name = "sekien"
-version = "0.3.1"
+version = "0.3.2"
 edition = "2021"
 rust-version = "1.76"
 description = "Mermaid-to-SVG renderer using OS-native WebView — CLI and Rust library (render_stream)."
