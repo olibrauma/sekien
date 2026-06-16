@@ -293,6 +293,52 @@ branch (`if (Ue.recoverable) this.trace(Fe)`), but searching `mermaid.min.js`
 confirms that no Mermaid grammar sets `recoverable: true` anywhere — the branch
 is dead code.  No special handling is needed for it.
 
+## Known downstream dependency conflict
+
+### Symptom
+
+Projects that depend on sekien (e.g. gazu) cannot upgrade `toml` past `0.8.2`
+within the same build graph.  `cargo update` is blocked from moving `toml` into
+the `0.8.23+` range.
+
+### Root cause
+
+sekien → tao/wry → gtk v0.18 → glib v0.18 → glib-macros v0.18
+  → **proc-macro-crate v2.0.2** → toml v0.8.2 → **toml_datetime =0.6.3** (exact pin)
+
+`proc-macro-crate v2.0.2` uses an exact-version requirement (`=0.6.3`) for
+`toml_datetime`.  Because `toml 0.8.23+` requires `toml_datetime ^0.6.11`,
+Cargo cannot unify the two requirements within the same `0.6.x` series and
+refuses to resolve the graph.
+
+### Fix status
+
+The fix already exists upstream:
+
+- `proc-macro-crate v3.x` (released 2024-01-04, current 3.5.0) drops the exact
+  pin entirely, using `toml_edit ^0.25` instead.
+- `glib-macros v0.20+` (2024-07) and `v0.22+` (2026-04) already use
+  `proc-macro-crate ^3.x`.
+
+However, `tao v0.35.3` and `wry v0.55.1` (both current latest as of 2026-06)
+are still pinned to `gtk = "0.18"` / `glib = "0.18"`.  Upgrading them requires
+migrating from GTK3 to GTK4, a large breaking change.  The relevant Tauri
+issues — [tao #1051](https://github.com/tauri-apps/tao/issues/1051) and
+[wry #1474](https://github.com/tauri-apps/wry/issues/1474) — have been open
+since January 2025 with no active development as of the time of writing.
+
+### Workaround for downstream consumers
+
+There is no safe workaround while sekien depends on tao/wry.
+
+- `[patch.crates-io]` to replace `proc-macro-crate 2.x` with `3.x` will fail
+  to compile because `glib-macros 0.18` uses the v2 API, which is incompatible
+  with v3.
+- Committing `Cargo.lock` and pinning `toml` to `0.8.2` prevents the conflict
+  from surfacing but does not resolve it.
+
+Resolution requires tao/wry to complete their GTK4 migration.
+
 ## Why this design
 
 ### Why single-mode streaming
