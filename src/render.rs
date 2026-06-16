@@ -211,11 +211,15 @@ enum Action {
     Fatal(Error),
 }
 
+struct PendingBlock {
+    id: usize,
+    content: String,
+}
+
 /// Pure state machine driving [`render_stream`]. See the module-level docs for
 /// the overall flow.
 struct Collector {
-    /// Diagrams received but not yet dispatched (1-origin id, content).
-    queue: VecDeque<(usize, String)>,
+    queue: VecDeque<PendingBlock>,
     /// Whether the input iterator is exhausted.
     end_received: bool,
     pipeline: Pipeline,
@@ -231,7 +235,7 @@ impl Collector {
     }
 
     fn on_block(&mut self, id: usize, content: String) -> Vec<Action> {
-        self.queue.push_back((id, content));
+        self.queue.push_back(PendingBlock { id, content });
         self.try_dispatch_next()
     }
 
@@ -270,7 +274,7 @@ impl Collector {
         if !matches!(self.pipeline, Pipeline::Idle) {
             return vec![];
         }
-        if let Some((id, content)) = self.queue.pop_front() {
+        if let Some(PendingBlock { id, content }) = self.queue.pop_front() {
             self.pipeline = Pipeline::Awaiting(id);
             vec![Action::Dispatch { id, content }]
         } else if self.end_received {
