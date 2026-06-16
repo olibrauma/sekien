@@ -226,6 +226,73 @@ cost dominates render cost**. This is the motivation for the `\0`-delimited
 protocol: bundling multiple blocks into one invocation amortises the startup
 overhead.
 
+## Mermaid.js error output
+
+### What Mermaid.js does on a syntax error
+
+When `mermaid.render()` is called with invalid input, the flow inside the
+bundled `mermaid.min.js` is:
+
+1. `Sx.fromText(code)` invokes the diagram's parser.
+   - **jison-based parsers** (flowchart/graph, sequenceDiagram, classDiagram,
+     gantt, and most other diagram types) call `parseError(str, hash)` on
+     failure.  The default implementation throws `new Error(str)` where `str` is
+     the formatted diagnostic:
+     ```
+     Parse error on line 2:
+     ...  A --> BADTOKEN
+     ----------------^
+     Expecting 'NEWLINE', 'EOF', got 'BADTOKEN'
+     ```
+     The `--------^` pointer comes from jison's `lexer.showPosition()`.
+   - **Langium-based parsers** (architecture, packet, and a few newer types)
+     collect `lexerErrors`/`parserErrors` and throw `MermaidParseError` whose
+     message is:
+     ```
+     Parsing failed: Parse error on line N, column M: <token description>
+     ```
+     No `--------^` pointer is produced.
+
+2. `cvt` (the internal `mermaidAPI.render`) catches the thrown error (`A`),
+   renders a fallback "error" SVG diagram (the red-X icon), then
+   **re-throws** the original error (`if (v) throw v`).  The fallback SVG is
+   rendered but never returned to the caller.
+
+3. The outer `mermaid.render` wrapper's rejection handler calls
+   `Q.error("Error parsing", u)`.  `Q` is Mermaid's internal logger; with the
+   default log level (`fatal`) this call is a **no-op**.
+
+### How sekien relays the error
+
+`render.html` wraps `mermaid.render()` in a `try/catch`:
+
+```js
+try {
+  const { svg } = await mermaid.render('d' + id, code);
+  // ... serialize and send svg via IPC
+} catch (e) {
+  window.ipc.postMessage(JSON.stringify({ type: 'error', id, error: e.message }));
+}
+```
+
+`e.message` is the string described above.  Rust receives it as
+`RenderOutcome::Error(msg)` and `main.rs` writes it to stderr via
+`write_framed`.
+
+For jison-based parsers this means the full `--------^` diagnostic reaches
+stderr.  For Langium-based parsers the line/column information reaches stderr
+but without the pointer line.
+
+### Design decision
+
+The current design is intentional: sekien relays `e.message` to stderr, which
+carries the full diagnostic including `--------^` for jison parsers.
+
+The jison runtime template that Mermaid embeds contains a recoverable-error
+branch (`if (Ue.recoverable) this.trace(Fe)`), but searching `mermaid.min.js`
+confirms that no Mermaid grammar sets `recoverable: true` anywhere — the branch
+is dead code.  No special handling is needed for it.
+
 ## Why this design
 
 ### Why single-mode streaming
