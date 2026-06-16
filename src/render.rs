@@ -308,7 +308,7 @@ impl Collector {
 pub fn render_stream(
     diagrams: impl IntoIterator<Item = String> + Send + 'static,
     config_json: Option<&str>,
-    mut on_result: impl FnMut(usize, RenderOutcome) + Send + 'static,
+    mut on_result: impl FnMut(usize, RenderOutcome),
 ) -> Result<()> {
     validate_config_json(config_json)?;
 
