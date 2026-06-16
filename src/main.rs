@@ -404,6 +404,8 @@ mod tests {
             (b"a\0b\0c", &["a", "b", "c"]),
             (b"m1\0m2\0", &["m1", "m2"]), // single trailing \0 is dropped
             (b"m1\0m2\0\0", &["m1", "m2", ""]),
+            (b"   \n   ", &[]),            // whitespace-only input is dropped
+            (b"a\0   \n   ", &["a"]),      // whitespace-only trailing content is dropped
         ];
         for (input, expected) in cases {
             let (blocks, result) = run_reader(input);
