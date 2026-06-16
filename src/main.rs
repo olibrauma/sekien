@@ -159,8 +159,9 @@ fn read_blocks<R: Read>(reader: R, mut on_block: impl FnMut(String)) -> Result<(
                         Ok(s) => on_block(s),
                         Err(e) => return Err(format!("input is not valid UTF-8: {e}")),
                     }
+                } else {
+                    buf.clear();
                 }
-                buf.clear();
             }
             Err(e) => return Err(format!("failed to read input: {e}")),
         }
