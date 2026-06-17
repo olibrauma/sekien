@@ -15,6 +15,10 @@
   All four were fatal and indistinguishable from the caller's perspective.
   `Error::Config` remains as the only user-actionable variant.
 
+### Updated
+
+- Bundled mermaid.js updated from 11.14.0 to 11.15.0.
+
 ## [0.3.2] - 2026-06-16
 
 ### Changed
