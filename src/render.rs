@@ -308,7 +308,8 @@ pub fn render_stream(
     validate_config_json(config_json)?;
 
     #[cfg(target_os = "linux")]
-    linux_display::ensure_display().map_err(|e| Error::Internal(format!("failed to initialize display: {e:#}")))?;
+    linux_display::ensure_display()
+        .map_err(|e| Error::Internal(format!("failed to initialize display: {e:#}")))?;
 
     let mut event_loop = EventLoopBuilder::<LoopEvent>::with_user_event().build();
     let proxy = event_loop.create_proxy();
@@ -340,7 +341,9 @@ pub fn render_stream(
             Event::UserEvent(LoopEvent::Ipc(raw)) => match serde_json::from_str::<IpcMessage>(&raw)
             {
                 Ok(msg) => collector.on_ipc(msg),
-                Err(e) => vec![Action::Fatal(Error::Internal(format!("malformed IPC: {e} (raw: {raw})")))],
+                Err(e) => vec![Action::Fatal(Error::Internal(format!(
+                    "malformed IPC: {e} (raw: {raw})"
+                )))],
             },
             Event::WindowEvent {
                 event: WindowEvent::CloseRequested,
