@@ -1,5 +1,20 @@
 # Changelog
 
+## [0.4.0] - 2026-06-17
+
+### Changed
+
+- **Breaking**: `on_result` callback signature changed from
+  `impl FnMut(usize, RenderOutcome)` to `impl FnMut(RenderOutcome)`.
+  The `id` argument (1-origin position) has been removed. Results are
+  delivered in input order, so callers that need an index can maintain
+  their own counter.
+
+- **Breaking**: `Error::Display`, `Error::Window`, `Error::WebView`, and
+  `Error::Ipc` have been replaced by a single `Error::Internal(String)`.
+  All four were fatal and indistinguishable from the caller's perspective.
+  `Error::Config` remains as the only user-actionable variant.
+
 ## [0.3.2] - 2026-06-16
 
 ### Changed
