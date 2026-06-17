@@ -11,10 +11,10 @@
 //! use sekien::{render_stream, RenderOutcome};
 //!
 //! let diagrams = vec!["graph LR\n  A --> B".to_string()];
-//! render_stream(diagrams, None, |id, outcome| {
+//! render_stream(diagrams, None, |outcome| {
 //!     match outcome {
-//!         RenderOutcome::Svg(svg) => println!("diagram {id}: {svg}"),
-//!         RenderOutcome::Error(e) => eprintln!("diagram {id} error: {e}"),
+//!         RenderOutcome::Svg(svg) => println!("{svg}"),
+//!         RenderOutcome::Error(e) => eprintln!("error: {e}"),
 //!     }
 //! })
 //! .unwrap();

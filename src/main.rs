@@ -220,24 +220,28 @@ fn main() -> Result<()> {
             let show_meta = options.show_meta;
             let mut wrote_svg = false;
             let mut wrote_err = false;
-            render_stream(rx, Some(&config_json), move |id, outcome| match outcome {
-                RenderOutcome::Svg(svg) => {
-                    if let Err(e) =
-                        write_framed(io::stdout().lock(), id, &svg, show_meta, wrote_svg)
-                    {
-                        eprintln!("Error: failed to write SVG to stdout: {e}");
-                        std::process::exit(1);
+            let mut id = 0usize;
+            render_stream(rx, Some(&config_json), move |outcome| {
+                id += 1;
+                match outcome {
+                    RenderOutcome::Svg(svg) => {
+                        if let Err(e) =
+                            write_framed(io::stdout().lock(), id, &svg, show_meta, wrote_svg)
+                        {
+                            eprintln!("Error: failed to write SVG to stdout: {e}");
+                            std::process::exit(1);
+                        }
+                        wrote_svg = true;
                     }
-                    wrote_svg = true;
-                }
-                RenderOutcome::Error(err) => {
-                    if let Err(e) =
-                        write_framed(io::stderr().lock(), id, &err, show_meta, wrote_err)
-                    {
-                        eprintln!("Error: failed to write error to stderr: {e}");
-                        std::process::exit(1);
+                    RenderOutcome::Error(err) => {
+                        if let Err(e) =
+                            write_framed(io::stderr().lock(), id, &err, show_meta, wrote_err)
+                        {
+                            eprintln!("Error: failed to write error to stderr: {e}");
+                            std::process::exit(1);
+                        }
+                        wrote_err = true;
                     }
-                    wrote_err = true;
                 }
             })?;
 

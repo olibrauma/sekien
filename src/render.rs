@@ -65,22 +65,14 @@ pub enum RenderOutcome {
 /// which is reported via [`RenderOutcome::Error`]).
 #[derive(Debug, thiserror::Error, PartialEq, Eq)]
 pub enum Error {
-    /// Linux only: failed to start the internal Xvfb display.
-    #[error("failed to initialize display: {0}")]
-    Display(String),
-    /// Failed to create the (hidden) WebView window.
-    #[error("failed to create window: {0}")]
-    Window(String),
-    /// Failed to create the WebView.
-    #[error("failed to create webview: {0}")]
-    WebView(String),
-    /// Received a malformed or unexpected IPC message from the WebView.
-    #[error("malformed IPC from webview: {0}")]
-    Ipc(String),
     /// `config_json` did not parse as a JSON object. Returned before any
     /// display/window/WebView initialisation is attempted.
     #[error("invalid config_json: {0}")]
     Config(String),
+    /// Internal failure (display init, window/WebView creation, or malformed
+    /// IPC). The message describes the specific cause.
+    #[error("{0}")]
+    Internal(String),
 }
 
 pub type Result<T> = std::result::Result<T, Error>;
@@ -143,7 +135,7 @@ fn create_window(event_loop: &EventLoopWindowTarget<LoopEvent>) -> Result<Window
     let builder = builder.with_position(tao::dpi::LogicalPosition::new(-10000, -10000));
     let window = builder
         .build(event_loop)
-        .map_err(|e| Error::Window(e.to_string()))?;
+        .map_err(|e| Error::Internal(format!("failed to create window: {e}")))?;
     #[cfg(not(target_os = "linux"))]
     window.set_outer_position(tao::dpi::LogicalPosition::new(-10000, -10000));
     Ok(window)
@@ -162,7 +154,7 @@ fn create_webview(
             let _ = proxy.send_event(LoopEvent::Ipc(req.into_body()));
         })
         .build(window)
-        .map_err(|e| Error::WebView(e.to_string()))
+        .map_err(|e| Error::Internal(format!("failed to create webview: {e}")))
 }
 
 fn dispatch_render(id: usize, content: &str, wv: &WebView) -> Result<()> {
@@ -172,7 +164,7 @@ fn dispatch_render(id: usize, content: &str, wv: &WebView) -> Result<()> {
     let content_literal = serde_json::to_string(content).expect("serialize Mermaid block content");
     let js = format!("renderMermaid({id}, {content_literal})");
     wv.evaluate_script(&js)
-        .map_err(|e| Error::WebView(format!("failed to dispatch render({id}) to webview: {e}")))
+        .map_err(|e| Error::Internal(format!("failed to dispatch render({id}) to webview: {e}")))
 }
 
 /// Events delivered to the event loop via [`EventLoopProxy`].
@@ -257,8 +249,8 @@ impl Collector {
 
     fn on_render_done(&mut self, id: usize, outcome: RenderOutcome) -> Vec<Action> {
         if !matches!(self.pipeline, Pipeline::Awaiting(n) if n == id) {
-            return vec![Action::Fatal(Error::Ipc(format!(
-                "received result for id {id} but pipeline state is {:?}",
+            return vec![Action::Fatal(Error::Internal(format!(
+                "malformed IPC: received result for id {id} but pipeline state is {:?}",
                 self.pipeline
             )))];
         }
@@ -285,10 +277,9 @@ impl Collector {
     }
 }
 
-/// Renders each diagram in `diagrams` to SVG, calling `on_result(id, outcome)` for
-/// each one as it completes. `id` is the 1-origin position of the diagram in
-/// `diagrams`'s iteration order; results are reported in that same order
-/// (rendering is strictly sequential).
+/// Renders each diagram in `diagrams` to SVG, calling `on_result(outcome)` for
+/// each one as it completes. Results are reported in the same order as the
+/// input (rendering is strictly sequential).
 ///
 /// Returns `Err` only for fatal failures of sekien itself: an invalid
 /// `config_json` (checked up front), or display initialisation, WebView
@@ -312,12 +303,12 @@ impl Collector {
 pub fn render_stream(
     diagrams: impl IntoIterator<Item = String> + Send + 'static,
     config_json: Option<&str>,
-    mut on_result: impl FnMut(usize, RenderOutcome),
+    mut on_result: impl FnMut(RenderOutcome),
 ) -> Result<()> {
     validate_config_json(config_json)?;
 
     #[cfg(target_os = "linux")]
-    linux_display::ensure_display().map_err(|e| Error::Display(format!("{e:#}")))?;
+    linux_display::ensure_display().map_err(|e| Error::Internal(format!("failed to initialize display: {e:#}")))?;
 
     let mut event_loop = EventLoopBuilder::<LoopEvent>::with_user_event().build();
     let proxy = event_loop.create_proxy();
@@ -349,7 +340,7 @@ pub fn render_stream(
             Event::UserEvent(LoopEvent::Ipc(raw)) => match serde_json::from_str::<IpcMessage>(&raw)
             {
                 Ok(msg) => collector.on_ipc(msg),
-                Err(e) => vec![Action::Fatal(Error::Ipc(format!("{e} (raw: {raw})")))],
+                Err(e) => vec![Action::Fatal(Error::Internal(format!("malformed IPC: {e} (raw: {raw})")))],
             },
             Event::WindowEvent {
                 event: WindowEvent::CloseRequested,
@@ -369,7 +360,7 @@ pub fn render_stream(
                         *control_flow = ControlFlow::Exit;
                     }
                 }
-                Action::Emit { id, outcome } => on_result(id, outcome),
+                Action::Emit { id: _, outcome } => on_result(outcome),
                 Action::Done => *control_flow = ControlFlow::Exit,
                 Action::Fatal(e) => {
                     fatal = Some(e);
@@ -579,7 +570,7 @@ mod tests {
         // A result arrives before any block was dispatched (pipeline NotReady).
         assert!(matches!(
             Collector::new().on_ipc(svg(1, "<svg/>")).as_slice(),
-            [Action::Fatal(Error::Ipc(_))]
+            [Action::Fatal(Error::Internal(_))]
         ));
 
         // A result arrives for a different id than the one in flight.
@@ -588,7 +579,7 @@ mod tests {
         c.on_ipc(ready()); // awaiting 1
         assert!(matches!(
             c.on_ipc(svg(2, "<svg/>")).as_slice(),
-            [Action::Fatal(Error::Ipc(_))]
+            [Action::Fatal(Error::Internal(_))]
         ));
     }
 
