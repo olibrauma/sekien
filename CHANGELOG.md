@@ -45,3 +45,49 @@
 
 - `Error::Config`: returned immediately if `config_json` doesn't parse as a JSON
   object, instead of hanging while the WebView waits to become ready.
+
+## [0.2.0] - 2026-06-13
+
+### Added
+
+- sekien is now a `[lib]` + `[[bin]]` crate. `render_stream` is the public
+  library entry point, callable directly from Rust without spawning a child
+  process.
+
+  ```rust
+  use sekien::{render_stream, RenderOutcome};
+
+  render_stream(diagrams, &RenderConfig::default(), |id, outcome| {
+      match outcome {
+          RenderOutcome::Svg(svg) => { /* ... */ }
+          RenderOutcome::Error(e) => { /* ... */ }
+      }
+  })?;
+  ```
+
+### Changed
+
+- **Breaking**: The crate now exports `render_stream`, `RenderConfig`,
+  `RenderOutcome`, `Error`, and `MERMAID_VERSION`. Previous versions had no
+  library API.
+
+## [0.1.1] - 2026-05-31
+
+### Fixed
+
+- Build reproducibility: normalize line endings before SHA-256 hashing in
+  `build.rs` to prevent checksum mismatches on Windows checkouts.
+
+## [0.1.0] - 2026-05-31
+
+### Added
+
+- Initial release. Mermaid → SVG CLI using an OS-native WebView (WKWebView on
+  macOS, WebView2 on Windows, WebKitGTK + Xvfb on Linux).
+- Streaming `\0`-delimited protocol: reads stdin until EOF, converts each
+  NUL-separated block to SVG, writes results to stdout, errors to stderr.
+- `--font`, `--theme`, `--look`, `--config` flags.
+- `--meta` flag: prepends `<!-- {"id": N} -->` before each output block.
+- Bundled `mermaid.min.js`; SHA-256 integrity check at compile time.
+- Linux: internal Xvfb management (no external `xvfb-run` required).
+- Prebuilt binaries for macOS (Apple Silicon, Intel) and Linux (x86-64).
