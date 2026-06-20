@@ -8,6 +8,8 @@ Mermaid → SVG conversion on the command line.
   uses the OS-native WebView instead of bundling Chromium
 - **Pipeline-friendly** — runs as a long-lived streaming process
 
+<img width="693" height="481" alt="sekien" src="https://github.com/user-attachments/assets/1f121c1c-b037-4529-ae16-18dd54eac5b1" />
+
 ## Install
 
 ```bash
