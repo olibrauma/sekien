@@ -6,7 +6,7 @@ use std::path::PathBuf;
 /// Expected SHA256 of `assets/mermaid.min.js`.
 /// Guards against accidental or malicious modifications during manual updates.
 const EXPECTED_MERMAID_SHA: &str =
-    "70137e77bb273bb2ef972b86e8b0400cca8be53cb25bfc45911a186dc98665de";
+    "74d7c46dabca328c2294733910a8aa1ed0c37451776e8d5295da38a2b758fb9b";
 
 fn main() {
     let manifest_dir = env::var("CARGO_MANIFEST_DIR").expect("CARGO_MANIFEST_DIR");
