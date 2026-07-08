@@ -1,5 +1,11 @@
 # Changelog
 
+## [0.4.1] - 2026-07-09
+
+### Updated
+
+- Bundled mermaid.js updated from 11.15.0 to 11.16.0.
+
 ## [0.4.0] - 2026-06-17
 
 ### Changed
