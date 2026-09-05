@@ -6,7 +6,7 @@ use std::path::PathBuf;
 /// Expected SHA256 of `assets/mermaid.min.js`.
 /// Guards against accidental or malicious modifications during manual updates.
 const EXPECTED_MERMAID_SHA: &str =
-    "74d7c46dabca328c2294733910a8aa1ed0c37451776e8d5295da38a2b758fb9b";
+    "581ed7d74bd9048d0e3a91363927d72ef22942d7722546b27f7cc29e35390eb8";
 
 fn main() {
     let manifest_dir = env::var("CARGO_MANIFEST_DIR").expect("CARGO_MANIFEST_DIR");
@@ -42,9 +42,16 @@ fn main() {
 }
 
 fn extract_version(content: &str) -> Option<String> {
+    // mermaid.min.js contains several `version:"X.Y.Z"` literals. Since 11.17.0
+    // the first one is a build-time placeholder (`globalThis.injected ??= {
+    // ..., version:"0.0.0" }`), so skip 0.0.0 and take the first real version.
     let needle = "version:\"";
-    let start = content.find(needle)?;
-    let after = &content[start + needle.len()..];
-    let end = after.find('"')?;
-    Some(after[..end].to_string())
+    content
+        .match_indices(needle)
+        .filter_map(|(i, _)| {
+            let after = &content[i + needle.len()..];
+            let end = after.find('"')?;
+            Some(after[..end].to_string())
+        })
+        .find(|v| v != "0.0.0")
 }

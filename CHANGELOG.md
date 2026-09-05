@@ -1,5 +1,19 @@
 # Changelog
 
+## [0.4.2] - 2026-09-05
+
+### Updated
+
+- Bundled mermaid.js updated from 11.16.0 to 11.17.2, matching
+  mermaid-cli 11.17.0.
+
+### Fixed
+
+- Build-time mermaid version detection: mermaid.js 11.17.x embeds a
+  `version:"0.0.0"` build placeholder before the real version string, which
+  made `MERMAID_VERSION` (and therefore `sekien --version`) report `0.0.0`.
+  The placeholder is now skipped.
+
 ## [0.4.1] - 2026-07-09
 
 ### Updated
