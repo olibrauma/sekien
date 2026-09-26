@@ -31,8 +31,9 @@
   `layout: "dagre"` also forces mindmaps off their cose-bilkent layout.
   In our comparison against 0.4.2 with this config, flowchart, state and ER
   output was byte-identical, and class, requirement and sequence diagrams had
-  the same size, positions and colours. Mindmap and gitGraph layouts shift by
-  a few pixels regardless of config.
+  the same size, positions and colours. Mindmap layouts shift by a few pixels
+  regardless of config. (Some diagram types, e.g. gitGraph and architecture,
+  are not byte-for-byte reproducible between runs even within one version.)
 
 - **Breaking**: The `flowchart.defaultRenderer`, `class.defaultRenderer` and
   `state.defaultRenderer` config options are now ignored by mermaid.js. Use
@@ -41,6 +42,16 @@
 - **Breaking**: mermaid.js 12 targets ES2024, which raises the minimum OS
   WebView: Safari 17.4+ on macOS and WebKitGTK 2.44+ on Linux. See
   Platforms in the README.
+
+- **Breaking**: MSRV raised from 1.76 to 1.85, as required by wry 0.57 and
+  tao 0.37.
+
+### Updated
+
+- wry updated from 0.55 to 0.57, and tao from 0.35 to 0.37. This includes a
+  tao fix for `EventLoopProxy::send_event` sometimes not delivering an event
+  until the next call; sekien uses it to deliver render results from the
+  WebView.
 
 ### Added
 
