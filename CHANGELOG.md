@@ -1,5 +1,61 @@
 # Changelog
 
+## [0.5.0] - 2026-09-26
+
+### Changed
+
+- **Breaking**: Bundled mermaid.js updated from 11.17.2 to 12.0.0, matching
+  mermaid-cli 12.0.0. The same input now renders differently by default:
+  - The default layout is ELK instead of dagre (flowchart, state, class, ER,
+    requirement and use case diagrams).
+  - Flowchart, sequence, class, state, ER, requirement and use case diagrams
+    default to the `redux-color` theme and the `neo` look.
+  - Flowchart and state nodes have a new minimum width (`minNodeWidth: 120`),
+    and flowchart labels wrap at 120px instead of 200px.
+
+  To keep the previous output, pass this with `--config`:
+
+  ```json
+  {
+    "theme": "default",
+    "look": "classic",
+    "flowchart": { "layout": "dagre", "minNodeWidth": 0, "wrappingWidth": 200 },
+    "state": { "layout": "dagre", "minNodeWidth": 0, "wrappingWidth": 200 },
+    "class": { "layout": "dagre" },
+    "er": { "layout": "dagre" },
+    "requirement": { "layout": "dagre" }
+  }
+  ```
+
+  Set `layout` per diagram type as above, not at the top level: a top-level
+  `layout: "dagre"` also forces mindmaps off their cose-bilkent layout.
+  In our comparison against 0.4.2 with this config, flowchart, state and ER
+  output was byte-identical, and class, requirement and sequence diagrams had
+  the same size, positions and colours. Mindmap and gitGraph layouts shift by
+  a few pixels regardless of config.
+
+- **Breaking**: The `flowchart.defaultRenderer`, `class.defaultRenderer` and
+  `state.defaultRenderer` config options are now ignored by mermaid.js. Use
+  the top-level `layout` option instead.
+
+- **Breaking**: mermaid.js 12 targets ES2024, which raises the minimum OS
+  WebView: Safari 17.4+ on macOS and WebKitGTK 2.44+ on Linux. See
+  Platforms in the README.
+
+### Added
+
+- `util/update-mermaid.sh <version>` updates the bundled mermaid.js from npm,
+  verifying the tarball against the registry's integrity hash.
+
+### Fixed
+
+- Build-time mermaid version detection no longer parses the minified bundle,
+  which has no stable version marker. The version is now recorded in
+  `assets/mermaid.version` (from the npm `package.json`) and checked against
+  the bundle at build time.
+- `--theme` help and `util/docs/cli.md` now list the `redux-color` and
+  `redux-dark-color` themes.
+
 ## [0.4.2] - 2026-09-05
 
 ### Updated

@@ -35,9 +35,12 @@ Font family for diagram text. Accepts CSS `font-family` syntax.
 
 mermaid.js theme. Accepted values:
 
-`default` | `base` | `dark` | `forest` | `neutral` | `neo` | `neo-dark` | `redux` | `redux-dark` | `null`
+`default` | `base` | `dark` | `forest` | `neutral` | `neo` | `neo-dark` | `redux` | `redux-dark` | `redux-color` | `redux-dark-color` | `null`
 
-- Default: mermaid.js default (`default`)
+- Default: mermaid.js default. Since mermaid.js 12 this depends on the diagram
+  type: flowchart, sequence, class, state, ER, requirement and use case
+  diagrams default to `redux-color`; other diagram types default to `default`.
+  Setting `--theme` applies to all diagram types.
 - Values are not validated; invalid values are silently ignored or produce a fallback in mermaid.js.
 
 ### `--look <look>`
@@ -46,7 +49,9 @@ Diagram style. Accepted values:
 
 `classic` | `handDrawn` | `neo`
 
-- Default: mermaid.js default
+- Default: mermaid.js default. Since mermaid.js 12 this depends on the diagram
+  type: the diagram types listed under `--theme` default to `neo`; others
+  default to `classic`.
 - `handDrawn` is supported for flowchart/graph diagrams only.
 - Values are not validated.
 

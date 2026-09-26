@@ -88,6 +88,12 @@ then paste a diagram and immediately press `Ctrl+@` — the SVG is written to
 | Windows | Display required (WebView2) |
 | Linux | Xvfb (launched internally — no session or display needed) |
 
+The bundled mermaid.js 12 targets ES2024, so the OS WebView must be recent
+enough: Safari 17.4 or later on macOS (WKWebView uses the system WebKit, which
+is updated with Safari), and a correspondingly recent WebKitGTK on Linux
+(2.44 or later; e.g. Ubuntu 22.04 needs the `jammy-updates` package, not the
+original 2.36). WebView2 on Windows is evergreen.
+
 ### macOS: Gatekeeper warning
 
 Binaries downloaded from GitHub Releases are unsigned. If Gatekeeper blocks the

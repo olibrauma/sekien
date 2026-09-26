@@ -28,7 +28,8 @@ In interactive mode, use Ctrl+@ to send a NUL byte and Ctrl+D to exit.
 Options:
   --font <font>          Font family for diagram text (default: mermaid.js default)
   --theme <theme>        Mermaid theme (default | base | dark | forest | neutral |
-                           neo | neo-dark | redux | redux-dark | null)
+                           neo | neo-dark | redux | redux-dark | redux-color |
+                           redux-dark-color | null)
   --look <look>          Diagram look (classic | handDrawn | neo)
                          handDrawn is supported for flowchart/graph only.
   --config <file>        JSON config file for mermaid.initialize()
