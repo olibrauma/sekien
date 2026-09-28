@@ -1,6 +1,8 @@
 [package]
 name = "sekien"
 version = "0.4.3"
+# Edition 2024 is blocked on src/linux_display.rs setting environment variables
+# (see the "Known issue" section there).
 edition = "2021"
 rust-version = "1.88"
 description = "Mermaid-to-SVG renderer using OS-native WebView — CLI and Rust library (render_stream)."

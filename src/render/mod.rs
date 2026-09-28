@@ -113,6 +113,17 @@ fn create_webview(window: &Window, html: String, proxy: EventLoopProxy<Input>) -
 /// (e.g. while diagrams are being fed in from `diagrams`'s iterator, which
 /// runs on its own thread) must do that work on a thread other than main —
 /// `render_stream` itself must run on main.
+///
+/// # Linux
+///
+/// `render_stream` launches its own Xvfb (the `Xvfb` binary must be installed)
+/// and sets `DISPLAY` (to that Xvfb), `GDK_BACKEND`,
+/// `WEBKIT_DISABLE_COMPOSITING_MODE`, `LIBGL_ALWAYS_SOFTWARE` and
+/// `NO_AT_BRIDGE` in the process environment; they stay set after it returns.
+/// Modifying the environment is unsound while another thread reads it, so if
+/// you can, call `render_stream` before starting threads that may read the
+/// environment. sekien's own threads do not. This is a known issue; see
+/// `src/linux_display.rs` for why and for the alternatives considered.
 pub fn render_stream(
     diagrams: impl IntoIterator<Item = String> + Send + 'static,
     config_json: Option<&str>,

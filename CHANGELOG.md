@@ -19,6 +19,10 @@
   the desktop's light/dark preference over the session bus (it never
   affected the output). sekien no longer connects to the session bus for
   that, and building it no longer needs the libdbus development headers.
+- Documented a known issue: on Linux, `render_stream` sets `DISPLAY` and four
+  other environment variables in the calling process, which is unsound
+  while another thread reads the environment. Behaviour is unchanged; see
+  the `render_stream` docs.
 
 ### Fixed
 

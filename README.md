@@ -102,7 +102,8 @@ Alternatively, allow it via System Settings → Privacy & Security.
 ### Linux: Xvfb required
 
 sekien launches its own Xvfb on every run and renders into that virtual display.
-The desktop environment (X11 / Wayland / Xwayland) and `$DISPLAY` are ignored.
+Any existing display (X11 / Wayland / Xwayland) is ignored: sekien points its
+own process's `$DISPLAY` at its Xvfb.
 
 ## vs mmdc
 

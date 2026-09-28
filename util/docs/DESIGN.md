@@ -105,8 +105,8 @@ stdin/file and splits on `\0` (`read_blocks`), feeds the resulting blocks to
 `render_stream` over an `mpsc::channel`, and writes `on_result`'s output back
 to stdout/stderr with `\0`/`--meta` framing (one `Framer` per stream). Since
 `on_result` receives outcomes in input order, the CLI numbers them itself for
-`--meta`. The `\0` protocol described in this document is entirely a CLI concern — `render_stream`
-has no knowledge of it, which lets other Rust programs (e.g. sekien-pandoc)
+`--meta`. The `\0` protocol described in this document is entirely a CLI
+concern — `render_stream` has no knowledge of it, which lets other Rust programs (e.g. sekien-pandoc)
 call it directly without going through the wire protocol at all.
 
 ### Pure core / impure shell
@@ -185,7 +185,9 @@ process's main thread; concurrent work (e.g. the feeder thread that relays
 ### Linux display resolution
 
 `ensure_display()` (in `linux_display.rs`) is called at the start of
-`render_stream`, before GTK is initialised.
+`render_stream`, before GTK is initialised. It sets environment variables,
+which is unsound once other threads exist; the facts, the alternatives
+considered and the decision are recorded in that file ("Known issue").
 
 #### Why X11 is forced
 
