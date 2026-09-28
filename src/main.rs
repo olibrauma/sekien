@@ -53,18 +53,21 @@ struct Options {
 enum Command {
     Help,
     Version,
-    Render { file: Option<String> },
+    Render {
+        file: Option<String>,
+        options: Options,
+    },
 }
 
-fn parse_args(raw: Vec<String>) -> Result<(Options, Command)> {
+fn parse_args(raw: Vec<String>) -> Result<Command> {
     let mut options = Options::default();
     let mut rest: Vec<String> = Vec::new();
     let mut iter = raw.into_iter();
 
     while let Some(arg) = iter.next() {
         match arg.as_str() {
-            "--help" | "-h" => return Ok((Options::default(), Command::Help)),
-            "--version" | "-v" => return Ok((Options::default(), Command::Version)),
+            "--help" | "-h" => return Ok(Command::Help),
+            "--version" | "-v" => return Ok(Command::Version),
             "--font" => {
                 options.font_family = Some(iter.next().context("--font requires a value")?);
             }
@@ -95,12 +98,10 @@ fn parse_args(raw: Vec<String>) -> Result<(Options, Command)> {
         );
     }
 
-    Ok((
+    Ok(Command::Render {
+        file: rest.into_iter().next(),
         options,
-        Command::Render {
-            file: rest.into_iter().next(),
-        },
-    ))
+    })
 }
 
 fn load_config_value(path: &str) -> Result<Value> {
@@ -168,32 +169,79 @@ fn read_blocks<R: Read>(reader: R, mut on_block: impl FnMut(String)) -> Result<(
     }
 }
 
-/// Writes one framed unit to `out`: an optional `\0` separator, an optional
-/// `--meta` comment (`<!-- {"id": N} -->`), `content`, and a trailing newline.
-fn write_framed(
-    mut out: impl Write,
-    id: usize,
-    content: &str,
+/// One output stream (stdout for SVGs, stderr for errors). Each unit written
+/// to it is framed as: a `\0` separator (except before the first unit), an
+/// optional `--meta` comment (`<!-- {"id": N} -->`), the content, and a
+/// trailing newline.
+struct Framer {
     show_meta: bool,
-    write_separator: bool,
-) -> io::Result<()> {
-    if write_separator {
-        out.write_all(&[0])?;
+    wrote: bool,
+}
+
+impl Framer {
+    fn new(show_meta: bool) -> Self {
+        Self {
+            show_meta,
+            wrote: false,
+        }
     }
-    if show_meta {
-        writeln!(out, "<!-- {{\"id\": {id}}} -->")?;
+
+    fn write(&mut self, mut out: impl Write, id: usize, content: &str) -> io::Result<()> {
+        if self.wrote {
+            out.write_all(&[0])?;
+        }
+        if self.show_meta {
+            writeln!(out, "<!-- {{\"id\": {id}}} -->")?;
+        }
+        writeln!(out, "{content}")?;
+        out.flush()?;
+        self.wrote = true;
+        Ok(())
     }
-    writeln!(out, "{content}")?;
-    out.flush()
+}
+
+fn render(file: Option<&str>, options: &Options) -> Result<()> {
+    let config_json = build_config_json(options)?;
+    let reader: Box<dyn Read + Send> = match file {
+        Some(p) => Box::new(fs::File::open(p).with_context(|| format!("cannot read '{p}'"))?),
+        None => Box::new(io::stdin()),
+    };
+
+    let (tx, rx) = mpsc::channel::<String>();
+    let reader_thread = thread::spawn(move || {
+        read_blocks(reader, |s| {
+            let _ = tx.send(s);
+        })
+    });
+
+    let mut svgs = Framer::new(options.show_meta);
+    let mut errors = Framer::new(options.show_meta);
+    let mut id = 0usize;
+    render_stream(rx, Some(&config_json), move |outcome| {
+        id += 1;
+        let written = match outcome {
+            RenderOutcome::Svg(svg) => svgs
+                .write(io::stdout().lock(), id, &svg)
+                .context("failed to write SVG to stdout"),
+            RenderOutcome::Error(err) => errors
+                .write(io::stderr().lock(), id, &err)
+                .context("failed to write error to stderr"),
+        };
+        if let Err(e) = written {
+            eprintln!("Error: {e:#}");
+            std::process::exit(1);
+        }
+    })?;
+
+    if let Err(e) = reader_thread.join().unwrap() {
+        bail!(e);
+    }
+    Ok(())
 }
 
 fn main() -> Result<()> {
     let raw: Vec<String> = env::args().skip(1).collect();
-    let (options, command) = parse_args(raw)?;
-
-    let config_json = build_config_json(&options)?;
-
-    match command {
+    match parse_args(raw)? {
         Command::Help => println!("{}", usage()),
         Command::Version => {
             println!(
@@ -202,55 +250,8 @@ fn main() -> Result<()> {
                 MERMAID_VERSION
             );
         }
-        Command::Render { file } => {
-            let reader: Box<dyn Read + Send> = match file.as_deref() {
-                Some(p) => {
-                    Box::new(fs::File::open(p).with_context(|| format!("cannot read '{p}'"))?)
-                }
-                None => Box::new(io::stdin()),
-            };
-
-            let (tx, rx) = mpsc::channel::<String>();
-            let handle = thread::spawn(move || {
-                read_blocks(reader, |s| {
-                    let _ = tx.send(s);
-                })
-            });
-
-            let show_meta = options.show_meta;
-            let mut wrote_svg = false;
-            let mut wrote_err = false;
-            let mut id = 0usize;
-            render_stream(rx, Some(&config_json), move |outcome| {
-                id += 1;
-                match outcome {
-                    RenderOutcome::Svg(svg) => {
-                        if let Err(e) =
-                            write_framed(io::stdout().lock(), id, &svg, show_meta, wrote_svg)
-                        {
-                            eprintln!("Error: failed to write SVG to stdout: {e}");
-                            std::process::exit(1);
-                        }
-                        wrote_svg = true;
-                    }
-                    RenderOutcome::Error(err) => {
-                        if let Err(e) =
-                            write_framed(io::stderr().lock(), id, &err, show_meta, wrote_err)
-                        {
-                            eprintln!("Error: failed to write error to stderr: {e}");
-                            std::process::exit(1);
-                        }
-                        wrote_err = true;
-                    }
-                }
-            })?;
-
-            if let Err(e) = handle.join().unwrap() {
-                bail!(e);
-            }
-        }
+        Command::Render { file, options } => render(file.as_deref(), &options)?,
     }
-
     Ok(())
 }
 
@@ -265,32 +266,34 @@ mod tests {
     #[test]
     fn help_and_version_flags() {
         assert!(matches!(
-            parse_args(args(&["--help"])).unwrap().1,
+            parse_args(args(&["--help"])).unwrap(),
             Command::Help
         ));
+        assert!(matches!(parse_args(args(&["-h"])).unwrap(), Command::Help));
         assert!(matches!(
-            parse_args(args(&["-h"])).unwrap().1,
-            Command::Help
-        ));
-        assert!(matches!(
-            parse_args(args(&["--version"])).unwrap().1,
+            parse_args(args(&["--version"])).unwrap(),
             Command::Version
         ));
         assert!(matches!(
-            parse_args(args(&["-v"])).unwrap().1,
+            parse_args(args(&["-v"])).unwrap(),
             Command::Version
         ));
     }
 
     #[test]
     fn render_no_args() {
-        let (_, cmd) = parse_args(args(&[])).unwrap();
-        assert!(matches!(cmd, Command::Render { file: None }));
+        assert!(matches!(
+            parse_args(args(&[])).unwrap(),
+            Command::Render { file: None, .. }
+        ));
     }
 
     #[test]
     fn flags_and_file_are_parsed() {
-        let (opts, cmd) = parse_args(args(&[
+        let Command::Render {
+            file,
+            options: opts,
+        } = parse_args(args(&[
             "--font",
             "Arial",
             "--theme",
@@ -302,15 +305,16 @@ mod tests {
             "--meta",
             "diagram.mmd",
         ]))
-        .unwrap();
+        .unwrap()
+        else {
+            panic!("expected Command::Render");
+        };
         assert_eq!(opts.font_family, Some("Arial".to_string()));
         assert_eq!(opts.theme, Some("dark".to_string()));
         assert_eq!(opts.look, Some("handDrawn".to_string()));
         assert_eq!(opts.config_file, Some("config.json".to_string()));
         assert!(opts.show_meta);
-        assert!(
-            matches!(cmd, Command::Render { ref file } if file.as_deref() == Some("diagram.mmd"))
-        );
+        assert_eq!(file.as_deref(), Some("diagram.mmd"));
     }
 
     #[test]
@@ -416,6 +420,23 @@ mod tests {
             assert_eq!(blocks, *expected, "input: {input:?}");
             assert_eq!(result, Ok(()));
         }
+    }
+
+    #[test]
+    fn framer_separates_units_with_nul() {
+        let mut out = Vec::new();
+        let mut framer = Framer::new(false);
+        framer.write(&mut out, 1, "a").unwrap();
+        framer.write(&mut out, 2, "b").unwrap();
+        assert_eq!(out, b"a\n\0b\n");
+    }
+
+    #[test]
+    fn framer_with_meta_prepends_id_comment() {
+        let mut out = Vec::new();
+        let mut framer = Framer::new(true);
+        framer.write(&mut out, 3, "a").unwrap();
+        assert_eq!(out, b"<!-- {\"id\": 3} -->\na\n");
     }
 
     #[test]

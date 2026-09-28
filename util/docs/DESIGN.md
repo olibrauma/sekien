@@ -103,8 +103,9 @@ creation, malformed IPC); per-diagram Mermaid errors are reported via
 `src/main.rs` (the CLI) is an ordinary consumer of this API: it reads
 stdin/file and splits on `\0` (`read_blocks`), feeds the resulting blocks to
 `render_stream` over an `mpsc::channel`, and writes `on_result`'s output back
-to stdout/stderr with `\0`/`--meta` framing (`write_framed`). The `\0`
-protocol described in this document is entirely a CLI concern — `render_stream`
+to stdout/stderr with `\0`/`--meta` framing (one `Framer` per stream). Since
+`on_result` receives outcomes in input order, the CLI numbers them itself for
+`--meta`. The `\0` protocol described in this document is entirely a CLI concern — `render_stream`
 has no knowledge of it, which lets other Rust programs (e.g. sekien-pandoc)
 call it directly without going through the wire protocol at all.
 
@@ -288,7 +289,7 @@ try {
 
 `e.message` is the string described above.  Rust receives it as
 `RenderOutcome::Error(msg)` and `main.rs` writes it to stderr via
-`write_framed`.
+its `Framer`.
 
 For jison-based parsers this means the full `--------^` diagnostic reaches
 stderr.  For Langium-based parsers the line/column information reaches stderr
