@@ -31,6 +31,8 @@ pub(super) fn validate_config_json(config_json: Option<&str>) -> Result<()> {
 pub(super) fn build_html(config_json: Option<&str>) -> String {
     let config_json = config_json.map_or_else(|| "{}".to_string(), escape_for_script);
 
+    // The user's config is substituted last, so it is never scanned for
+    // placeholders; mermaid.js must not contain `{{CONFIG_JSON}}` (tested).
     HTML_TEMPLATE
         .replace("{{MERMAID_JS}}", MERMAID_JS)
         .replace("{{CONFIG_JSON}}", &config_json)
@@ -49,6 +51,11 @@ pub(super) fn render_script(id: usize, content: &str) -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn mermaid_js_contains_no_later_placeholder() {
+        assert!(!MERMAID_JS.contains("{{CONFIG_JSON}}"));
+    }
 
     #[test]
     fn render_script_passes_content_as_a_js_string_literal() {
