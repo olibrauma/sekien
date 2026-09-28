@@ -1,4 +1,5 @@
-//! Pure construction of the page loaded into the WebView.
+//! Pure construction of what is sent to the WebView: the page, and the
+//! script that asks it to render a diagram.
 
 use crate::error::{Error, Result};
 
@@ -35,9 +36,27 @@ pub(super) fn build_html(config_json: Option<&str>) -> String {
         .replace("{{CONFIG_JSON}}", &config_json)
 }
 
+/// The script that asks the page to render diagram `id` (`content`). The page
+/// reports the result back via IPC with the same `id`.
+pub(super) fn render_script(id: usize, content: &str) -> String {
+    // serde_json produces a valid JS string literal (escaping `"`, `\`,
+    // control chars, U+2028/U+2029). evaluate_script bypasses the HTML parser,
+    // so `</script>` does not need the extra escaping that build_html requires.
+    let literal = serde_json::to_string(content).expect("serialize Mermaid block content");
+    format!("renderMermaid({id}, {literal})")
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn render_script_passes_content_as_a_js_string_literal() {
+        assert_eq!(
+            render_script(3, "graph LR\n  A[\"</script>\"]"),
+            r#"renderMermaid(3, "graph LR\n  A[\"</script>\"]")"#
+        );
+    }
 
     #[test]
     fn escape_for_script_escapes_angle_brackets() {

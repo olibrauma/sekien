@@ -113,15 +113,19 @@ call it directly without going through the wire protocol at all.
 `render_stream` itself is split into:
 
 - **`Collector`** (pure, `render/collector.rs`): a state machine that takes
-  one input event — a new diagram, end-of-input, or an IPC message from the
-  WebView — and returns the `Action`s (`Dispatch` / `Emit` / `Done` /
-  `Fatal`) that should happen next. It touches neither the WebView, the event
-  loop, nor any I/O, so it is unit-tested directly without a display.
-- **`html`** (pure, `render/html.rs`): builds the page loaded into the
-  WebView.
-- **`render_stream`** (impure, `render/mod.rs`): owns the WebView/event loop,
-  feeds events into the `Collector`, and executes the `Action`s it returns
-  (evaluate a render script, call `on_result`, or exit the loop).
+  one `Input` — a new diagram, end-of-input, a raw IPC message from the
+  WebView, or the window closing — and returns the `Action`s (`Dispatch` /
+  `Emit` / `Done` / `Fatal`) that should happen next. It assigns diagram ids
+  and parses IPC itself. It touches neither the WebView, the event loop, nor
+  any I/O, so it is unit-tested directly without a display. Malformed or
+  unexpected IPC (a result for an id that is not in flight, or a second
+  `ready`) and a closed window are `Fatal`.
+- **`html`** (pure, `render/html.rs`): builds what is sent to the WebView —
+  the page, and the `renderMermaid(id, ...)` script for each dispatch.
+- **`render_stream`** (impure, `render/mod.rs`): owns the window, WebView and
+  event loop, turns events into `Input`s for the `Collector`, and executes
+  the `Action`s it returns (evaluate a render script, call `on_result`, or
+  exit the loop). It makes no decisions of its own.
 
 Dependencies point one way: `render/mod.rs` uses `collector` and `html`, and
 everything uses `error.rs` (the `Error` type, a leaf). Nothing depends back on
@@ -141,10 +145,12 @@ spinning up a WebView.
 - **Queue-based dispatch**: blocks arrive faster than the WebView can render,
   so `Collector` holds a `VecDeque<(id, content)>`. The next block is
   dispatched only when the pipeline is `Idle` (no render in flight).
-- **1-origin block IDs**: assigned by `render_stream` via `enumerate()` over
-  `diagrams`. The WebView receives each block as `renderMermaid(id, ...)` and
-  the DOM element is named `d{id}`, preventing silent misattribution of
-  results.
+- **1-origin block IDs**: assigned by `Collector` in arrival order. The
+  WebView receives each block as `renderMermaid(id, ...)` and the DOM element
+  is named `d{id}`, preventing silent misattribution of results. The IDs are
+  internal to the renderer: `Collector` emits bare `RenderOutcome`s, and
+  callers that need a number (like the CLI's `--meta`) count outcomes
+  themselves, since they arrive in input order.
 - **Per-block errors do not exit**: a Mermaid render failure is reported as
   `RenderOutcome::Error` via `on_result`; the pipeline returns to `Idle` and
   the queue continues draining. `render_stream`'s `Err` (and the CLI's exit 1)

@@ -16,6 +16,15 @@
   transitive dependencies already required 1.88 in 0.4.2, so in practice
   this corrects the declared version rather than raising the real minimum.
 
+### Fixed
+
+- `render_stream` now returns `Err` if its window is closed before all
+  diagrams are rendered. Previously it returned `Ok(())`, silently dropping
+  the remaining diagrams.
+- `render_stream` now returns `Err` if the WebView reports readiness a second
+  time (e.g. after a page reload). Previously it dispatched another render
+  while one was still in flight.
+
 ## [0.4.2] - 2026-09-05
 
 ### Updated

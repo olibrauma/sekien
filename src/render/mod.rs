@@ -4,27 +4,30 @@
 //!
 //! [`render_stream`] is split into a pure core and an impure shell:
 //!
-//! - [`Collector`] (in `collector.rs`) is a pure state machine: given an input
-//!   event (a new diagram, end-of-input, or an IPC message from the WebView), it
-//!   returns the [`Action`]s that should happen next. It does not touch the
-//!   WebView, the event loop, or any I/O, so it can be unit tested directly.
-//!   The page it talks to is built by the equally pure `html.rs`.
-//! - [`render_stream`] is the thin impure shell: it owns the WebView/event loop,
-//!   feeds events into the [`Collector`], and executes the [`Action`]s it returns
-//!   (dispatching a render, calling `on_result`, or exiting the loop).
+//! - [`Collector`] (in `collector.rs`) is a pure state machine: given an
+//!   [`Input`] (a new diagram, end-of-input, an IPC message from the WebView,
+//!   or the window closing), it returns the [`Action`]s that should happen
+//!   next. It assigns each diagram its id and parses IPC, and does not touch
+//!   the WebView, the event loop, or any I/O, so it can be unit tested directly.
+//! - `html.rs` is equally pure: it builds the page and the script that asks
+//!   the page to render a diagram.
+//! - [`render_stream`] is the thin impure shell: it owns the window, WebView
+//!   and event loop, feeds [`Input`]s into the [`Collector`], and executes the
+//!   [`Action`]s it returns (evaluating a render script, calling `on_result`,
+//!   or exiting the loop).
 //!
 //! ```text
 //! [feeder thread]             [event loop]                      [WebView / mermaid.js]
 //!   |                              |                                  |
-//!   |-- Block(1, ...) ------------>|-- Collector::on_block -------->|
-//!   |                              |     -> Action::Dispatch(1) --->|-- evaluate_script
-//!   |-- Block(2, ...) ------------>|-- Collector::on_block (queued) |
-//!   |-- InputEnd ------------------>|-- Collector::on_input_end      |
-//!   |                              |<-- IPC: svg/error 1 ------------|
-//!   |                              |-- Collector::on_ipc ---------->|
+//!   |-- Block(...) --------------->|-- Collector::handle ------------>|
+//!   |                              |     -> Action::Dispatch(1) ----->|-- evaluate_script
+//!   |-- Block(...) --------------->|-- Collector::handle (queued)     |
+//!   |-- End ---------------------->|-- Collector::handle              |
+//!   |                              |<-- Ipc: svg/error 1 -------------|
+//!   |                              |-- Collector::handle              |
 //!   |                              |     -> Action::Emit(...) ---- on_result(...)
-//!   |                              |     -> Action::Dispatch(2) --->|-- evaluate_script
-//!   |                              |<-- IPC: svg/error 2 ------------|
+//!   |                              |     -> Action::Dispatch(2) ----->|-- evaluate_script
+//!   |                              |<-- Ipc: svg/error 2 -------------|
 //!   |                              |     -> Action::Emit(...) ---- on_result(...)
 //!   |                              |     -> Action::Done -> loop exits (run_return)
 //! ```
@@ -39,7 +42,7 @@ mod html;
 pub use collector::RenderOutcome;
 
 use crate::error::{Error, Result};
-use collector::{Action, Collector, IpcMessage};
+use collector::{Action, Collector, Input};
 use tao::{
     event::{Event, WindowEvent},
     event_loop::{ControlFlow, EventLoopBuilder, EventLoopProxy, EventLoopWindowTarget},
@@ -54,7 +57,7 @@ use crate::linux_display;
 /// Version string extracted from `mermaid.min.js` by `build.rs` at compile time.
 pub const MERMAID_VERSION: &str = env!("MERMAID_VERSION");
 
-fn create_window(event_loop: &EventLoopWindowTarget<LoopEvent>) -> Result<Window> {
+fn create_window(event_loop: &EventLoopWindowTarget<Input>) -> Result<Window> {
     // macOS/Windows: place the window off-screen so it is not visible.
     // Linux: position doesn't matter inside Xvfb, but 1x1 triggers a GDK assertion,
     // so use 100x100.
@@ -75,40 +78,16 @@ fn create_window(event_loop: &EventLoopWindowTarget<LoopEvent>) -> Result<Window
     Ok(window)
 }
 
-fn create_webview(
-    window: &Window,
-    html: String,
-    proxy: EventLoopProxy<LoopEvent>,
-) -> Result<WebView> {
+fn create_webview(window: &Window, html: String, proxy: EventLoopProxy<Input>) -> Result<WebView> {
     WebViewBuilder::new()
         .with_background_color((0, 0, 0, 0))
         .with_transparent(true)
         .with_html(html)
         .with_ipc_handler(move |req| {
-            let _ = proxy.send_event(LoopEvent::Ipc(req.into_body()));
+            let _ = proxy.send_event(Input::Ipc(req.into_body()));
         })
         .build(window)
         .map_err(|e| Error::Internal(format!("failed to create webview: {e}")))
-}
-
-fn dispatch_render(id: usize, content: &str, wv: &WebView) -> Result<()> {
-    // serde_json produces a valid JS string literal (escaping `"`, `\`,
-    // control chars, U+2028/U+2029). evaluate_script bypasses the HTML parser,
-    // so `</script>` does not need the extra escaping that build_html requires.
-    let content_literal = serde_json::to_string(content).expect("serialize Mermaid block content");
-    let js = format!("renderMermaid({id}, {content_literal})");
-    wv.evaluate_script(&js)
-        .map_err(|e| Error::Internal(format!("failed to dispatch render({id}) to webview: {e}")))
-}
-
-/// Events delivered to the event loop via [`EventLoopProxy`].
-enum LoopEvent {
-    /// A diagram from the input, with its 1-origin position.
-    Block(usize, String),
-    /// The input iterator is exhausted; no more `Block`s will arrive.
-    InputEnd,
-    /// A raw IPC message from the WebView (JSON, parsed into [`IpcMessage`]).
-    Ipc(String),
 }
 
 /// Renders each diagram in `diagrams` to SVG, calling `on_result(outcome)` for
@@ -145,70 +124,63 @@ pub fn render_stream(
     linux_display::ensure_display()
         .map_err(|e| Error::Internal(format!("failed to initialize display: {e:#}")))?;
 
-    let mut event_loop = EventLoopBuilder::<LoopEvent>::with_user_event().build();
-    let proxy = event_loop.create_proxy();
-
+    let mut event_loop = EventLoopBuilder::<Input>::with_user_event().build();
     let window = create_window(&event_loop)?;
-    let webview = create_webview(&window, html::build_html(config_json), proxy.clone())?;
+    let webview = create_webview(
+        &window,
+        html::build_html(config_json),
+        event_loop.create_proxy(),
+    )?;
 
-    {
-        let proxy = proxy.clone();
-        std::thread::spawn(move || {
-            for (i, content) in diagrams.into_iter().enumerate() {
-                if proxy.send_event(LoopEvent::Block(i + 1, content)).is_err() {
-                    return;
-                }
+    let feeder = event_loop.create_proxy();
+    std::thread::spawn(move || {
+        for content in diagrams {
+            if feeder.send_event(Input::Block(content)).is_err() {
+                return;
             }
-            let _ = proxy.send_event(LoopEvent::InputEnd);
-        });
-    }
+        }
+        let _ = feeder.send_event(Input::End);
+    });
 
     let mut collector = Collector::new();
-    let mut fatal: Option<Error> = None;
+    // Set once the loop should exit: `Ok` when done, `Err` on a fatal error.
+    let mut exit: Option<Result<()>> = None;
 
     event_loop.run_return(|event, _, control_flow| {
-        *control_flow = ControlFlow::Wait;
-
-        let actions = match event {
-            Event::UserEvent(LoopEvent::Block(id, content)) => collector.on_block(id, content),
-            Event::UserEvent(LoopEvent::InputEnd) => collector.on_input_end(),
-            Event::UserEvent(LoopEvent::Ipc(raw)) => match serde_json::from_str::<IpcMessage>(&raw)
-            {
-                Ok(msg) => collector.on_ipc(msg),
-                Err(e) => vec![Action::Fatal(Error::Internal(format!(
-                    "malformed IPC: {e} (raw: {raw})"
-                )))],
-            },
+        let input = match event {
+            Event::UserEvent(input) => Some(input),
             Event::WindowEvent {
                 event: WindowEvent::CloseRequested,
                 ..
-            } => {
-                *control_flow = ControlFlow::Exit;
-                vec![]
-            }
-            _ => vec![],
+            } => Some(Input::WindowClosed),
+            _ => None,
         };
-
-        for action in actions {
-            match action {
-                Action::Dispatch { id, content } => {
-                    if let Err(e) = dispatch_render(id, &content, &webview) {
-                        fatal = Some(e);
-                        *control_flow = ControlFlow::Exit;
+        if let (None, Some(input)) = (&exit, input) {
+            for action in collector.handle(input) {
+                match action {
+                    Action::Dispatch { id, content } => {
+                        if let Err(e) = webview.evaluate_script(&html::render_script(id, &content))
+                        {
+                            exit = Some(Err(Error::Internal(format!(
+                                "failed to dispatch render({id}) to webview: {e}"
+                            ))));
+                        }
                     }
+                    Action::Emit(outcome) => on_result(outcome),
+                    Action::Done => exit = Some(Ok(())),
+                    Action::Fatal(e) => exit = Some(Err(e)),
                 }
-                Action::Emit(outcome) => on_result(outcome),
-                Action::Done => *control_flow = ControlFlow::Exit,
-                Action::Fatal(e) => {
-                    fatal = Some(e);
-                    *control_flow = ControlFlow::Exit;
+                if exit.is_some() {
+                    break;
                 }
             }
         }
+        *control_flow = if exit.is_some() {
+            ControlFlow::Exit
+        } else {
+            ControlFlow::Wait
+        };
     });
 
-    match fatal {
-        Some(e) => Err(e),
-        None => Ok(()),
-    }
+    exit.unwrap_or(Ok(()))
 }
