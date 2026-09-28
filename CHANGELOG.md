@@ -15,6 +15,10 @@
   1.85, and transitive dependencies (icu, time) require 1.88. Those
   transitive dependencies already required 1.88 in 0.4.2, so in practice
   this corrects the declared version rather than raising the real minimum.
+- tao is now built without its `dbus` feature, which only read and watched
+  the desktop's light/dark preference over the session bus (it never
+  affected the output). sekien no longer connects to the session bus for
+  that, and building it no longer needs the libdbus development headers.
 
 ### Fixed
 

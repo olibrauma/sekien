@@ -21,7 +21,11 @@ path = "src/main.rs"
 
 [dependencies]
 wry = "0.57"
-tao = "0.37"
+# tao's default `dbus` feature only reads and watches the desktop's light/dark
+# preference over the session bus, which never affects the output. `rwh_06` is
+# needed for `build(&window)`; `x11` for the Linux display setup (see
+# src/linux_display.rs).
+tao = { version = "0.37", default-features = false, features = ["rwh_06", "x11"] }
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
 anyhow = "1"
