@@ -81,13 +81,13 @@ work without any delimiter conversion.
 ### Library / CLI split
 
 sekien is a `[lib]` + `[[bin]]` crate: `src/lib.rs` re-exports a small public
-API from `src/render.rs`, whose sole entry point is
+API from `src/render/` and `src/error.rs`, whose sole entry point is
 
 ```rust
 fn render_stream(
     diagrams: impl IntoIterator<Item = String> + Send + 'static,
     config_json: Option<&str>,
-    on_result: impl FnMut(usize, RenderOutcome) + Send + 'static,
+    on_result: impl FnMut(RenderOutcome),
 ) -> Result<()>;
 ```
 
@@ -95,8 +95,7 @@ fn render_stream(
 `{"theme":"dark","fontFamily":"Arial"}`), or `None` for defaults.
 
 It renders each `String` in `diagrams` to SVG, one at a time, and calls
-`on_result(id, outcome)` for each — `id` is the 1-origin position of the
-diagram in `diagrams`, and results are delivered in that same order.
+`on_result(outcome)` exactly once for each, in the order of `diagrams`.
 `Err` is returned only for sekien's own fatal failures (display init, WebView
 creation, malformed IPC); per-diagram Mermaid errors are reported via
 `RenderOutcome::Error`, not `Err`.
@@ -104,23 +103,34 @@ creation, malformed IPC); per-diagram Mermaid errors are reported via
 `src/main.rs` (the CLI) is an ordinary consumer of this API: it reads
 stdin/file and splits on `\0` (`read_blocks`), feeds the resulting blocks to
 `render_stream` over an `mpsc::channel`, and writes `on_result`'s output back
-to stdout/stderr with `\0`/`--meta` framing (`write_framed`). The `\0`
-protocol described in this document is entirely a CLI concern — `render_stream`
-has no knowledge of it, which lets other Rust programs (e.g. sekien-pandoc)
+to stdout/stderr with `\0`/`--meta` framing (one `Framer` per stream). Since
+`on_result` receives outcomes in input order, the CLI numbers them itself for
+`--meta`. The `\0` protocol described in this document is entirely a CLI
+concern — `render_stream` has no knowledge of it, which lets other Rust programs (e.g. sekien-pandoc)
 call it directly without going through the wire protocol at all.
 
 ### Pure core / impure shell
 
 `render_stream` itself is split into:
 
-- **`Collector`** (pure): a state machine that takes one input event — a new
-  diagram, end-of-input, or an IPC message from the WebView — and returns the
-  `Action`s (`Dispatch` / `Emit` / `Done` / `Fatal`) that should happen next.
-  It touches neither the WebView, the event loop, nor any I/O, so it is
-  unit-tested directly without a display.
-- **`render_stream`** (impure): owns the WebView/event loop, feeds events into
-  the `Collector`, and executes the `Action`s it returns (evaluate a render
-  script, call `on_result`, or exit the loop).
+- **`Collector`** (pure, `render/collector.rs`): a state machine that takes
+  one `Input` — a new diagram, end-of-input, a raw IPC message from the
+  WebView, or the window closing — and returns the `Action`s (`Dispatch` /
+  `Emit` / `Done` / `Fatal`) that should happen next. It assigns diagram ids
+  and parses IPC itself. It touches neither the WebView, the event loop, nor
+  any I/O, so it is unit-tested directly without a display. Malformed or
+  unexpected IPC (a result for an id that is not in flight, or a second
+  `ready`) and a closed window are `Fatal`.
+- **`html`** (pure, `render/html.rs`): builds what is sent to the WebView —
+  the page, and the `renderMermaid(id, ...)` script for each dispatch.
+- **`render_stream`** (impure, `render/mod.rs`): owns the window, WebView and
+  event loop, turns events into `Input`s for the `Collector`, and executes
+  the `Action`s it returns (evaluate a render script, call `on_result`, or
+  exit the loop). It makes no decisions of its own.
+
+Dependencies point one way: `render/mod.rs` uses `collector` and `html`, and
+everything uses `error.rs` (the `Error` type, a leaf). Nothing depends back on
+`render/mod.rs`.
 
 This separation is what makes the renderer's sequencing guarantee — exactly
 one render in flight, results delivered in input order — testable without
@@ -136,10 +146,12 @@ spinning up a WebView.
 - **Queue-based dispatch**: blocks arrive faster than the WebView can render,
   so `Collector` holds a `VecDeque<(id, content)>`. The next block is
   dispatched only when the pipeline is `Idle` (no render in flight).
-- **1-origin block IDs**: assigned by `render_stream` via `enumerate()` over
-  `diagrams`. The WebView receives each block as `renderMermaid(id, ...)` and
-  the DOM element is named `d{id}`, preventing silent misattribution of
-  results.
+- **1-origin block IDs**: assigned by `Collector` in arrival order. The
+  WebView receives each block as `renderMermaid(id, ...)` and the DOM element
+  is named `d{id}`, preventing silent misattribution of results. The IDs are
+  internal to the renderer: `Collector` emits bare `RenderOutcome`s, and
+  callers that need a number (like the CLI's `--meta`) count outcomes
+  themselves, since they arrive in input order.
 - **Per-block errors do not exit**: a Mermaid render failure is reported as
   `RenderOutcome::Error` via `on_result`; the pipeline returns to `Idle` and
   the queue continues draining. `render_stream`'s `Err` (and the CLI's exit 1)
@@ -150,13 +162,10 @@ spinning up a WebView.
 
 tao is preferred over winit for its stronger Linux support.
 
-Window size and placement differ by OS:
-
-- **macOS / Windows**: the window renders on the real screen, so it is placed
-  off-screen at (−10000, −10000). Size 1×1 is sufficient.
-- **Linux**: rendering happens entirely inside Xvfb (no real screen), so
-  placement is irrelevant. GTK raises an assertion at 1×1, so the window is
-  sized to 100×100 under `#[cfg(target_os = "linux")]`.
+The window is placed off-screen at (−10000, −10000) on every OS, so it is
+never visible (on Linux it lives on a private Xvfb display anyway). It is
+1×1, except on Linux, where GTK raises an assertion at 1×1 and 100×100 is
+used.
 
 `render_stream` uses `event_loop.run_return()`, not `run()`: it returns
 control to the caller once `Collector` signals `Done` or a fatal error occurs,
@@ -176,7 +185,9 @@ process's main thread; concurrent work (e.g. the feeder thread that relays
 ### Linux display resolution
 
 `ensure_display()` (in `linux_display.rs`) is called at the start of
-`render_stream`, before GTK is initialised.
+`render_stream`, before GTK is initialised. It sets environment variables,
+which is unsound once other threads exist; the facts, the alternatives
+considered and the decision are recorded in that file ("Known issue").
 
 #### Why X11 is forced
 
@@ -277,7 +288,7 @@ try {
 
 `e.message` is the string described above.  Rust receives it as
 `RenderOutcome::Error(msg)` and `main.rs` writes it to stderr via
-`write_framed`.
+its `Framer`.
 
 For jison-based parsers this means the full `--------^` diagnostic reaches
 stderr.  For Langium-based parsers the line/column information reaches stderr

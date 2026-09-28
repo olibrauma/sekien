@@ -1,6 +1,6 @@
 # Changelog
 
-## [0.5.0] - 2026-09-26
+## [0.5.0] - Unreleased
 
 ### Changed
 
@@ -43,16 +43,6 @@
   WebView: Safari 17.4+ on macOS and WebKitGTK 2.44+ on Linux. See
   Platforms in the README.
 
-- **Breaking**: MSRV raised from 1.76 to 1.85, as required by wry 0.57 and
-  tao 0.37.
-
-### Updated
-
-- wry updated from 0.55 to 0.57, and tao from 0.35 to 0.37. This includes a
-  tao fix for `EventLoopProxy::send_event` sometimes not delivering an event
-  until the next call; sekien uses it to deliver render results from the
-  WebView.
-
 ### Added
 
 - `util/update-mermaid.sh <version>` updates the bundled mermaid.js from npm,
@@ -66,6 +56,39 @@
   the bundle at build time.
 - `--theme` help and `util/docs/cli.md` now list the `redux-color` and
   `redux-dark-color` themes.
+
+## [0.4.3] - 2026-09-29
+
+### Updated
+
+- wry updated from 0.55 to 0.57, and tao from 0.35 to 0.37. This includes a
+  tao fix for `EventLoopProxy::send_event` sometimes not delivering an event
+  until the next call; sekien uses it to deliver render results from the
+  WebView.
+
+### Changed
+
+- `rust-version` raised from 1.76 to 1.88. wry 0.57 and tao 0.37 require
+  1.85, and transitive dependencies (icu, time) require 1.88. Those
+  transitive dependencies already required 1.88 in 0.4.2, so in practice
+  this corrects the declared version rather than raising the real minimum.
+- tao is now built without its `dbus` feature, which only read and watched
+  the desktop's light/dark preference over the session bus (it never
+  affected the output). sekien no longer connects to the session bus for
+  that, and building it no longer needs the libdbus development headers.
+- Documented a known issue: on Linux, `render_stream` sets `DISPLAY` and four
+  other environment variables in the calling process, which is unsound
+  while another thread reads the environment. Behaviour is unchanged; see
+  the `render_stream` docs.
+
+### Fixed
+
+- `render_stream` now returns `Err` if its window is closed before all
+  diagrams are rendered. Previously it returned `Ok(())`, silently dropping
+  the remaining diagrams.
+- `render_stream` now returns `Err` if the WebView reports readiness a second
+  time (e.g. after a page reload). Previously it dispatched another render
+  while one was still in flight.
 
 ## [0.4.2] - 2026-09-05
 

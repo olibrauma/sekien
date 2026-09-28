@@ -8,6 +8,47 @@
 //! - Xvfb is launched with `-terminate`, so it exits automatically when
 //!   sekien exits (when the last X client disconnects).
 //!
+//! ## Known issue: the process environment is modified
+//!
+//! [`ensure_display`] sets five environment variables with `set_var`, which
+//! is unsound once other threads exist (another thread's `getenv`, e.g. in
+//! GLib or glibc, can read memory freed by `setenv`). Threads do exist at that
+//! point: the Xvfb stdout reader below, the CLI's stdin reader, and whatever
+//! the host of the library has spawned. This is why the crate stays on edition
+//! 2021: edition 2024 makes `set_var` `unsafe`, and no honest `SAFETY`
+//! comment can be written for these calls.
+//!
+//! Why each variable (as of WebKitGTK 2.50/2.54, tao 0.37):
+//!
+//! | Variable | Read by | Without it |
+//! |---|---|---|
+//! | `DISPLAY` | GTK; tao's x11 device thread (`XOpenDisplay(NULL)`); WebKitGTK's child processes, which inherit the environment | WebKitGTK 2.50 (e.g. Ubuntu 22.04): `WebKitWebProcess` fails with "cannot open display" and rendering aborts. tao segfaults if `$DISPLAY` is unset (tao bug, cf. tauri-apps/tao#1347). |
+//! | `NO_AT_BRIDGE` | GTK's AT-SPI bridge | `dbind-WARNING` on stderr where there is no accessibility bus (e.g. CI), which breaks the CLI's clean stderr |
+//! | `LIBGL_ALWAYS_SOFTWARE` | Mesa | Mesa's DRI3 warning on stderr (Xvfb has no DRI3) |
+//! | `GDK_BACKEND` | GDK | GDK may prefer `$WAYLAND_DISPLAY` over Xvfb |
+//! | `WEBKIT_DISABLE_COMPOSITING_MODE` | WebKitGTK | GPU compositing, which Xvfb cannot provide |
+//!
+//! The first three were observed; the last two are the documented intent.
+//! Only an environment variable can reach child processes, and none of these
+//! has an API alternative that does.
+//!
+//! Alternatives considered:
+//!
+//! - **API-only setup** (`gtk_init_check` with `--display :N`,
+//!   `gdk_set_allowed_backends`, WebKitGTK settings, tao/wry without `x11`):
+//!   worked with WebKitGTK 2.54 but not 2.50 (child processes still need
+//!   `$DISPLAY`), still printed the AT-SPI warning, and made programs that
+//!   enable tao's `x11` feature elsewhere crash without a display. Rejected.
+//! - **The CLI sets the variables** at the start of `main`, before any thread
+//!   exists (sound), and the library requires the host to provide `$DISPLAY`
+//!   (e.g. `xvfb-run`). Sound, but burdens library users. Not adopted yet.
+//! - **Set them only while single-threaded** (`/proc/self/task`): sound, but
+//!   does nothing for hosts that already run threads (e.g. tokio).
+//!
+//! Decision: keep setting the variables (behaviour unchanged from 0.4.2),
+//! document the side effect and its precondition on
+//! [`crate::render_stream`], and revisit together with edition 2024.
+//!
 //! ## Xvfb readiness detection
 //!
 //! Xvfb launched with `-displayfd <fd>` writes the chosen display number to
