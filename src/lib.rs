@@ -20,9 +20,11 @@
 //! .unwrap();
 //! ```
 
+mod error;
 mod render;
 
 #[cfg(target_os = "linux")]
 mod linux_display;
 
-pub use render::{render_stream, Error, RenderOutcome, Result, MERMAID_VERSION};
+pub use error::{Error, Result};
+pub use render::{render_stream, RenderOutcome, MERMAID_VERSION};

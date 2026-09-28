@@ -81,7 +81,7 @@ work without any delimiter conversion.
 ### Library / CLI split
 
 sekien is a `[lib]` + `[[bin]]` crate: `src/lib.rs` re-exports a small public
-API from `src/render.rs`, whose sole entry point is
+API from `src/render/` and `src/error.rs`, whose sole entry point is
 
 ```rust
 fn render_stream(
@@ -112,14 +112,20 @@ call it directly without going through the wire protocol at all.
 
 `render_stream` itself is split into:
 
-- **`Collector`** (pure): a state machine that takes one input event — a new
-  diagram, end-of-input, or an IPC message from the WebView — and returns the
-  `Action`s (`Dispatch` / `Emit` / `Done` / `Fatal`) that should happen next.
-  It touches neither the WebView, the event loop, nor any I/O, so it is
-  unit-tested directly without a display.
-- **`render_stream`** (impure): owns the WebView/event loop, feeds events into
-  the `Collector`, and executes the `Action`s it returns (evaluate a render
-  script, call `on_result`, or exit the loop).
+- **`Collector`** (pure, `render/collector.rs`): a state machine that takes
+  one input event — a new diagram, end-of-input, or an IPC message from the
+  WebView — and returns the `Action`s (`Dispatch` / `Emit` / `Done` /
+  `Fatal`) that should happen next. It touches neither the WebView, the event
+  loop, nor any I/O, so it is unit-tested directly without a display.
+- **`html`** (pure, `render/html.rs`): builds the page loaded into the
+  WebView.
+- **`render_stream`** (impure, `render/mod.rs`): owns the WebView/event loop,
+  feeds events into the `Collector`, and executes the `Action`s it returns
+  (evaluate a render script, call `on_result`, or exit the loop).
+
+Dependencies point one way: `render/mod.rs` uses `collector` and `html`, and
+everything uses `error.rs` (the `Error` type, a leaf). Nothing depends back on
+`render/mod.rs`.
 
 This separation is what makes the renderer's sequencing guarantee — exactly
 one render in flight, results delivered in input order — testable without
