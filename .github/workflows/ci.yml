@@ -44,6 +44,31 @@ jobs:
         env:
           SEKIEN_BIN: ./target/release/sekien
 
+  other-platforms:
+    # E2E runs on Linux only; this at least compiles, lints and unit-tests the
+    # macOS/Windows code paths (cfg(not(target_os = "linux"))) on every push,
+    # instead of first building them when a release is tagged.
+    name: Check (${{ matrix.os }})
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [macos-latest, windows-latest]
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v5
+
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          components: clippy
+
+      - uses: Swatinem/rust-cache@v2
+
+      - name: Clippy
+        run: cargo clippy --locked --all-targets -- -D warnings
+
+      - name: Unit tests
+        run: cargo test --locked
+
   msrv:
     name: MSRV (1.88)
     runs-on: ubuntu-22.04
