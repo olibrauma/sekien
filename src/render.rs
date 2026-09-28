@@ -21,17 +21,16 @@
 //!   |-- InputEnd ------------------>|-- Collector::on_input_end      |
 //!   |                              |<-- IPC: svg/error 1 ------------|
 //!   |                              |-- Collector::on_ipc ---------->|
-//!   |                              |     -> Action::Emit(1, ...) -- on_result(1, ...)
+//!   |                              |     -> Action::Emit(...) ---- on_result(...)
 //!   |                              |     -> Action::Dispatch(2) --->|-- evaluate_script
 //!   |                              |<-- IPC: svg/error 2 ------------|
-//!   |                              |     -> Action::Emit(2, ...) -- on_result(2, ...)
+//!   |                              |     -> Action::Emit(...) ---- on_result(...)
 //!   |                              |     -> Action::Done -> loop exits (run_return)
 //! ```
 //!
 //! `render_stream` dispatches at most one render at a time (mermaid.render is not
-//! parallelisable), in input order. `on_result` is therefore called in input order
-//! too: `on_result`'s first argument is the 1-origin position of the diagram in
-//! `diagrams`.
+//! parallelisable), in input order. `on_result` is therefore called exactly once
+//! per diagram, in the order of `diagrams`.
 
 use serde::Deserialize;
 use std::collections::VecDeque;
@@ -77,7 +76,7 @@ pub enum Error {
 
 pub type Result<T> = std::result::Result<T, Error>;
 
-/// IPC messages from the WebView. Three variants, fixed by `build_html`:
+/// IPC messages from the WebView. Three variants, fixed by `render.html`:
 ///
 /// - `{"type":"ready"}`: mermaid.initialize() complete
 /// - `{"type":"svg","id":N,"svg":"..."}`: block N rendered successfully
@@ -195,8 +194,10 @@ enum Pipeline {
 enum Action {
     /// Dispatch diagram `id` (`content`) to the WebView.
     Dispatch { id: usize, content: String },
-    /// Report the outcome for diagram `id` to the caller.
-    Emit { id: usize, outcome: RenderOutcome },
+    /// Report the outcome of the in-flight diagram to the caller. Outcomes are
+    /// emitted in input order, so no id is attached: ids exist only to match
+    /// IPC results to dispatched renders, and never leave the renderer.
+    Emit(RenderOutcome),
     /// All diagrams processed; the event loop should exit.
     Done,
     /// Fatal failure; the event loop should exit and return this error.
@@ -255,7 +256,7 @@ impl Collector {
             )))];
         }
         self.pipeline = Pipeline::Idle;
-        let mut actions = vec![Action::Emit { id, outcome }];
+        let mut actions = vec![Action::Emit(outcome)];
         actions.extend(self.try_dispatch_next());
         actions
     }
@@ -363,7 +364,7 @@ pub fn render_stream(
                         *control_flow = ControlFlow::Exit;
                     }
                 }
-                Action::Emit { id: _, outcome } => on_result(outcome),
+                Action::Emit(outcome) => on_result(outcome),
                 Action::Done => *control_flow = ControlFlow::Exit,
                 Action::Fatal(e) => {
                     fatal = Some(e);
@@ -497,18 +498,12 @@ mod tests {
         }
     }
 
-    fn emit_svg(id: usize, s: &str) -> Action {
-        Action::Emit {
-            id,
-            outcome: RenderOutcome::Svg(s.to_string()),
-        }
+    fn emit_svg(s: &str) -> Action {
+        Action::Emit(RenderOutcome::Svg(s.to_string()))
     }
 
-    fn emit_err(id: usize, s: &str) -> Action {
-        Action::Emit {
-            id,
-            outcome: RenderOutcome::Error(s.to_string()),
-        }
+    fn emit_err(s: &str) -> Action {
+        Action::Emit(RenderOutcome::Error(s.to_string()))
     }
 
     #[test]
@@ -533,7 +528,7 @@ mod tests {
 
         assert_eq!(
             c.on_ipc(svg(1, "<svg/>")),
-            vec![emit_svg(1, "<svg/>"), dispatch(2, "b")]
+            vec![emit_svg("<svg/>"), dispatch(2, "b")]
         );
     }
 
@@ -545,7 +540,7 @@ mod tests {
 
         assert_eq!(
             c.on_ipc(error(1, "Lexical error")),
-            vec![emit_err(1, "Lexical error")]
+            vec![emit_err("Lexical error")]
         );
     }
 
@@ -557,7 +552,7 @@ mod tests {
         c.on_input_end();
         assert_eq!(
             c.on_ipc(svg(1, "<svg/>")),
-            vec![emit_svg(1, "<svg/>"), Action::Done]
+            vec![emit_svg("<svg/>"), Action::Done]
         );
     }
 
@@ -595,7 +590,7 @@ mod tests {
         assert_eq!(c.on_block(2, "b".into()), vec![]);
         assert_eq!(
             c.on_ipc(svg(1, "<svg/>")),
-            vec![emit_svg(1, "<svg/>"), dispatch(2, "b")]
+            vec![emit_svg("<svg/>"), dispatch(2, "b")]
         );
     }
 }

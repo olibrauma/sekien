@@ -87,7 +87,7 @@ API from `src/render.rs`, whose sole entry point is
 fn render_stream(
     diagrams: impl IntoIterator<Item = String> + Send + 'static,
     config_json: Option<&str>,
-    on_result: impl FnMut(usize, RenderOutcome) + Send + 'static,
+    on_result: impl FnMut(RenderOutcome),
 ) -> Result<()>;
 ```
 
@@ -95,8 +95,7 @@ fn render_stream(
 `{"theme":"dark","fontFamily":"Arial"}`), or `None` for defaults.
 
 It renders each `String` in `diagrams` to SVG, one at a time, and calls
-`on_result(id, outcome)` for each — `id` is the 1-origin position of the
-diagram in `diagrams`, and results are delivered in that same order.
+`on_result(outcome)` exactly once for each, in the order of `diagrams`.
 `Err` is returned only for sekien's own fatal failures (display init, WebView
 creation, malformed IPC); per-diagram Mermaid errors are reported via
 `RenderOutcome::Error`, not `Err`.
