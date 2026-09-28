@@ -72,6 +72,8 @@ fn create_window(event_loop: &EventLoopWindowTarget<Input>) -> Result<Window> {
         .with_position(off_screen)
         .build(event_loop)
         .map_err(|e| Error::Internal(format!("failed to create window: {e}")))?;
+    // Set again after creation: window managers may ignore or adjust the
+    // initial position.
     window.set_outer_position(off_screen);
     Ok(window)
 }
