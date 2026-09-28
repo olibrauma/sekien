@@ -1,5 +1,21 @@
 # Changelog
 
+## [0.4.3] - 2026-09-28
+
+### Updated
+
+- wry updated from 0.55 to 0.57, and tao from 0.35 to 0.37. This includes a
+  tao fix for `EventLoopProxy::send_event` sometimes not delivering an event
+  until the next call; sekien uses it to deliver render results from the
+  WebView.
+
+### Changed
+
+- `rust-version` raised from 1.76 to 1.88. wry 0.57 and tao 0.37 require
+  1.85, and transitive dependencies (icu, time) require 1.88. Those
+  transitive dependencies already required 1.88 in 0.4.2, so in practice
+  this corrects the declared version rather than raising the real minimum.
+
 ## [0.4.2] - 2026-09-05
 
 ### Updated
