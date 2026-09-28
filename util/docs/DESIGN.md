@@ -162,13 +162,10 @@ spinning up a WebView.
 
 tao is preferred over winit for its stronger Linux support.
 
-Window size and placement differ by OS:
-
-- **macOS / Windows**: the window renders on the real screen, so it is placed
-  off-screen at (−10000, −10000). Size 1×1 is sufficient.
-- **Linux**: rendering happens entirely inside Xvfb (no real screen), so
-  placement is irrelevant. GTK raises an assertion at 1×1, so the window is
-  sized to 100×100 under `#[cfg(target_os = "linux")]`.
+The window is placed off-screen at (−10000, −10000) on every OS, so it is
+never visible (on Linux it lives on a private Xvfb display anyway). It is
+1×1, except on Linux, where GTK raises an assertion at 1×1 and 100×100 is
+used.
 
 `render_stream` uses `event_loop.run_return()`, not `run()`: it returns
 control to the caller once `Collector` signals `Done` or a fatal error occurs,

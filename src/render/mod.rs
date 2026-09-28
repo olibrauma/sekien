@@ -44,6 +44,7 @@ pub use collector::RenderOutcome;
 use crate::error::{Error, Result};
 use collector::{Action, Collector, Input};
 use tao::{
+    dpi::{LogicalPosition, LogicalSize},
     event::{Event, WindowEvent},
     event_loop::{ControlFlow, EventLoopBuilder, EventLoopProxy, EventLoopWindowTarget},
     platform::run_return::EventLoopExtRunReturn,
@@ -58,23 +59,20 @@ use crate::linux_display;
 pub const MERMAID_VERSION: &str = env!("MERMAID_VERSION");
 
 fn create_window(event_loop: &EventLoopWindowTarget<Input>) -> Result<Window> {
-    // macOS/Windows: place the window off-screen so it is not visible.
-    // Linux: position doesn't matter inside Xvfb, but 1x1 triggers a GDK assertion,
-    // so use 100x100.
+    // Placed off-screen so that it is never visible (on Linux it lives on a
+    // private Xvfb display anyway). 1x1 triggers a GDK assertion on Linux.
     let size = if cfg!(target_os = "linux") { 100 } else { 1 };
-    let builder = WindowBuilder::new()
+    let off_screen = LogicalPosition::new(-10000, -10000);
+    let window = WindowBuilder::new()
         .with_transparent(true)
         .with_decorations(false)
         .with_always_on_top(false)
         .with_visible(true)
-        .with_inner_size(tao::dpi::LogicalSize::new(size, size));
-    #[cfg(not(target_os = "linux"))]
-    let builder = builder.with_position(tao::dpi::LogicalPosition::new(-10000, -10000));
-    let window = builder
+        .with_inner_size(LogicalSize::new(size, size))
+        .with_position(off_screen)
         .build(event_loop)
         .map_err(|e| Error::Internal(format!("failed to create window: {e}")))?;
-    #[cfg(not(target_os = "linux"))]
-    window.set_outer_position(tao::dpi::LogicalPosition::new(-10000, -10000));
+    window.set_outer_position(off_screen);
     Ok(window)
 }
 
