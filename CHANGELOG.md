@@ -43,6 +43,10 @@
   WebView: Safari 17.4+ on macOS and WebKitGTK 2.44+ on Linux. See
   Platforms in the README.
 
+- The README now lists Windows as untested, with a known issue: WebView2
+  creation fails on the GitHub Actions Windows runner, also for 0.4.2 (#5).
+  Rendering on a real Windows machine has not been verified.
+
 ### Added
 
 - `util/update-mermaid.sh <version>` updates the bundled mermaid.js from npm,
