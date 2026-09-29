@@ -45,10 +45,13 @@ jobs:
           SEKIEN_BIN: ./target/release/sekien
 
   other-platforms:
-    # E2E runs on Linux only; this at least compiles, lints and unit-tests the
-    # macOS/Windows code paths (cfg(not(target_os = "linux"))) on every push,
-    # instead of first building them when a release is tagged.
-    name: Check (${{ matrix.os }})
+    # Lints, unit-tests and end-to-end tests the macOS/Windows code paths
+    # (cfg(not(target_os = "linux"))) and their OS WebViews (WKWebView,
+    # WebView2) on every push, instead of first building them when a release
+    # is tagged. The hosted runners have a desktop session, so the WebView can
+    # render. They run recent OS versions, so this does not check the minimum
+    # WebView versions in the README.
+    name: Test (${{ matrix.os }})
     strategy:
       fail-fast: false
       matrix:
@@ -68,6 +71,19 @@ jobs:
 
       - name: Unit tests
         run: cargo test --locked
+
+      - name: Build release binary
+        run: cargo build --release --locked
+
+      - name: E2E tests
+        # Windows: WebView2 creation fails on this runner, including for
+        # v0.4.2 (#5). Keep running it so the status stays visible, but don't
+        # fail the job until that is resolved.
+        continue-on-error: ${{ runner.os == 'Windows' }}
+        shell: bash
+        run: bash util/tests/test.sh
+        env:
+          SEKIEN_BIN: ./target/release/sekien${{ runner.os == 'Windows' && '.exe' || '' }}
 
   msrv:
     name: MSRV (1.88)

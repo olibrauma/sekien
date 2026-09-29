@@ -26,7 +26,8 @@ pass() { echo "  PASS: $1"; }
 fail() { echo "  FAIL: $1"; FAILED=$((FAILED + 1)); }
 
 # Count occurrences of <svg in a file
-count_svg_in_file() { grep -c '<svg' "$1" 2>/dev/null || echo 0; }
+# (grep -c prints 0 itself when nothing matches, so don't append another 0.)
+count_svg_in_file() { local n; n=$(grep -c '<svg' "$1" 2>/dev/null); echo "${n:-0}"; }
 
 # Count NUL bytes in a file
 count_nul_in_file() { tr -cd '\0' < "$1" | wc -c; }
@@ -44,7 +45,7 @@ echo ""
 
 # --- Test 1: file argument → SVG on stdout ---
 echo "[1] File argument → SVG on stdout"
-MMD=$(mktemp /tmp/sekien_test_XXXXXX.mmd)
+MMD=$(mktemp /tmp/sekien_test_XXXXXX)
 printf 'graph LR\n  A --> B\n' > "$MMD"
 "$BINARY" "$MMD" > "$TMPOUT" 2>"$TMPERR"
 EXIT=$?
@@ -143,7 +144,7 @@ echo ""
 
 # --- Test 9: --theme option ---
 echo "[9] --theme dark → produces SVG"
-MMD=$(mktemp /tmp/sekien_test_XXXXXX.mmd)
+MMD=$(mktemp /tmp/sekien_test_XXXXXX)
 printf 'graph LR\n  A --> B\n' > "$MMD"
 "$BINARY" --theme dark "$MMD" > "$TMPOUT" 2>"$TMPERR"
 EXIT=$?
@@ -155,7 +156,7 @@ echo ""
 
 # --- Test 10: --font option ---
 echo "[10] --font Arial → produces SVG"
-MMD=$(mktemp /tmp/sekien_test_XXXXXX.mmd)
+MMD=$(mktemp /tmp/sekien_test_XXXXXX)
 printf 'graph LR\n  A --> B\n' > "$MMD"
 "$BINARY" --font Arial "$MMD" > "$TMPOUT" 2>"$TMPERR"
 EXIT=$?
@@ -167,7 +168,7 @@ echo ""
 
 # --- Test 11: --look option ---
 echo "[11] --look classic → produces SVG"
-MMD=$(mktemp /tmp/sekien_test_XXXXXX.mmd)
+MMD=$(mktemp /tmp/sekien_test_XXXXXX)
 printf 'graph LR\n  A --> B\n' > "$MMD"
 "$BINARY" --look classic "$MMD" > "$TMPOUT" 2>"$TMPERR"
 EXIT=$?
@@ -179,7 +180,7 @@ echo ""
 
 # --- Test 12: --config option ---
 echo "[12] --config → produces SVG"
-CFGTMP=$(mktemp /tmp/sekien_test_XXXXXX.json)
+CFGTMP=$(mktemp /tmp/sekien_test_XXXXXX)
 printf '{"theme":"dark"}' > "$CFGTMP"
 printf 'graph LR\n  A --> B\n' | "$BINARY" --config "$CFGTMP" > "$TMPOUT" 2>"$TMPERR"
 EXIT=$?
@@ -191,8 +192,8 @@ echo ""
 
 # --- Test 13: multiple files → non-zero exit ---
 echo "[13] Multiple files → non-zero exit"
-MMD1=$(mktemp /tmp/sekien_test_XXXXXX.mmd)
-MMD2=$(mktemp /tmp/sekien_test_XXXXXX.mmd)
+MMD1=$(mktemp /tmp/sekien_test_XXXXXX)
+MMD2=$(mktemp /tmp/sekien_test_XXXXXX)
 printf 'graph LR\n  A --> B\n' > "$MMD1"
 printf 'graph TD\n  X --> Y\n' > "$MMD2"
 "$BINARY" "$MMD1" "$MMD2" > "$TMPOUT" 2>"$TMPERR"
