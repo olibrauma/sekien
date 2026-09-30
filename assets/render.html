@@ -6,37 +6,41 @@
 </style>
 </head>
 <body>
-<script type="module">
-// Served by the `sekien://` custom protocol with the rest of mermaid's ESM
-// build; chunks (e.g. ELK) load only when a diagram needs them.
-import mermaid from "./mermaid.esm.min.mjs";
+<script>
+// mermaid's ESM build is served by the `sekien://` custom protocol with the
+// page; chunks (e.g. ELK) load only when a diagram needs them. It is imported
+// dynamically so that a failure to load or initialize it is reported (type
+// "fatal") instead of leaving sekien waiting for "ready" forever.
+const post = (message) => window.ipc.postMessage(JSON.stringify(message));
 
-mermaid.initialize({
-  securityLevel: "strict",
-  ...{{CONFIG_JSON}},
-  startOnLoad: false,
-  htmlLabels: false,
-});
+import("./mermaid.esm.min.mjs").then(({ default: mermaid }) => {
+  mermaid.initialize({
+    securityLevel: "strict",
+    ...{{CONFIG_JSON}},
+    startOnLoad: false,
+    htmlLabels: false,
+  });
 
-window.renderMermaid = async function(id, code) {
-  try {
-    const { svg } = await mermaid.render('d' + id, code);
-    // mermaid.render() returns an HTML-serialized SVG string: attributes
-    // like xlink:href are present without the xmlns:xlink declaration that
-    // strict XML parsers (e.g. usvg, used by typst) require. Round-trip
-    // through the DOM (HTML parsing, which assigns the correct namespace to
-    // foreign attributes per the HTML5 spec) and re-serialize as XML to fix
-    // this generally, for any namespaced attribute.
-    const container = document.createElement('div');
-    container.innerHTML = svg;
-    const xml = new XMLSerializer().serializeToString(container.firstElementChild);
-    window.ipc.postMessage(JSON.stringify({ type: 'svg', id: id, svg: xml }));
-  } catch(e) {
-    window.ipc.postMessage(JSON.stringify({ type: 'error', id: id, error: e.message }));
-  }
-};
+  window.renderMermaid = async function(id, code) {
+    try {
+      const { svg } = await mermaid.render('d' + id, code);
+      // mermaid.render() returns an HTML-serialized SVG string: attributes
+      // like xlink:href are present without the xmlns:xlink declaration that
+      // strict XML parsers (e.g. usvg, used by typst) require. Round-trip
+      // through the DOM (HTML parsing, which assigns the correct namespace to
+      // foreign attributes per the HTML5 spec) and re-serialize as XML to fix
+      // this generally, for any namespaced attribute.
+      const container = document.createElement('div');
+      container.innerHTML = svg;
+      const xml = new XMLSerializer().serializeToString(container.firstElementChild);
+      post({ type: 'svg', id: id, svg: xml });
+    } catch(e) {
+      post({ type: 'error', id: id, error: e.message });
+    }
+  };
 
-window.ipc.postMessage(JSON.stringify({ type: 'ready' }));
+  post({ type: 'ready' });
+}).catch((e) => post({ type: 'fatal', error: String(e) }));
 </script>
 </body>
 </html>

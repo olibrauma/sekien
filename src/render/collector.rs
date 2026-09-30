@@ -27,17 +27,20 @@ pub(super) enum Input {
     WindowClosed,
 }
 
-/// IPC messages from the WebView. Three variants, fixed by `render.html`:
+/// IPC messages from the WebView. Four variants, fixed by `render.html`:
 ///
 /// - `{"type":"ready"}`: mermaid.initialize() complete
 /// - `{"type":"svg","id":N,"svg":"..."}`: block N rendered successfully
 /// - `{"type":"error","id":N,"error":"..."}`: block N failed to parse
+/// - `{"type":"fatal","error":"..."}`: mermaid could not be loaded or
+///   initialized, so "ready" will never come
 #[derive(Deserialize)]
 #[serde(tag = "type", rename_all = "lowercase")]
 enum IpcMessage {
     Ready,
     Svg { id: usize, svg: String },
     Error { id: usize, error: String },
+    Fatal { error: String },
 }
 
 /// Three-state machine gating dispatch to the WebView.
@@ -113,6 +116,7 @@ impl Collector {
             IpcMessage::Ready => self.on_ready(),
             IpcMessage::Svg { id, svg } => self.on_render_done(id, RenderOutcome::Svg(svg)),
             IpcMessage::Error { id, error } => self.on_render_done(id, RenderOutcome::Error(error)),
+            IpcMessage::Fatal { error } => fatal(format!("page failed to load: {error}")),
         }
     }
 
@@ -184,6 +188,10 @@ mod tests {
             parse_ipc(r#"{"type":"error","id":2,"error":"Lexical error"}"#).unwrap(),
             IpcMessage::Error { id: 2, ref error } if error == "Lexical error"
         ));
+        assert!(matches!(
+            parse_ipc(r#"{"type":"fatal","error":"TypeError"}"#).unwrap(),
+            IpcMessage::Fatal { ref error } if error == "TypeError"
+        ));
     }
 
     #[test]
@@ -197,6 +205,7 @@ mod tests {
             r#"{"type":"svg","id":1,"svg":42}"#,
             r#"{"type":"error","id":1}"#,
             r#"{"type":"error","id":1,"error":42}"#,
+            r#"{"type":"fatal"}"#,
         ] {
             assert!(parse_ipc(raw).is_err(), "expected error for {raw}");
         }
@@ -326,6 +335,27 @@ mod tests {
         assert!(is_fatal(
             &Collector::new().handle(Input::Ipc("not json".into()))
         ));
+    }
+
+    #[test]
+    fn collector_page_load_failure_is_fatal_in_any_state() {
+        let fatal_msg = || Input::Ipc(r#"{"type":"fatal","error":"TypeError: x"}"#.into());
+        // Before ready: the usual case (the import failed).
+        let mut c = Collector::new();
+        c.handle(block("a"));
+        let actions = c.handle(fatal_msg());
+        assert!(
+            matches!(actions.as_slice(), [Action::Fatal(Error::Internal(m))] if m.contains("TypeError: x")),
+            "{actions:?}"
+        );
+        // Idle, and with a render in flight.
+        let mut c = Collector::new();
+        c.handle(ready());
+        assert!(is_fatal(&c.handle(fatal_msg())));
+        let mut c = Collector::new();
+        c.handle(block("a"));
+        c.handle(ready());
+        assert!(is_fatal(&c.handle(fatal_msg())));
     }
 
     #[test]

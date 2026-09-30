@@ -118,8 +118,8 @@ fn render_stream(
 It renders each `String` in `diagrams` to SVG, one at a time, and calls
 `on_result(outcome)` exactly once for each, in the order of `diagrams`.
 `Err` is returned only for sekien's own fatal failures (display init, WebView
-creation, malformed IPC); per-diagram Mermaid errors are reported via
-`RenderOutcome::Error`, not `Err`.
+creation, the page failing to load or initialize mermaid.js, malformed IPC);
+per-diagram Mermaid errors are reported via `RenderOutcome::Error`, not `Err`.
 
 `src/main.rs` (the CLI) is an ordinary consumer of this API: it reads
 stdin/file and splits on `\0` (`read_blocks`), feeds the resulting blocks to
@@ -141,7 +141,10 @@ call it directly without going through the wire protocol at all.
   and parses IPC itself. It touches neither the WebView, the event loop, nor
   any I/O, so it is unit-tested directly without a display. Malformed or
   unexpected IPC (a result for an id that is not in flight, or a second
-  `ready`) and a closed window are `Fatal`.
+  `ready`), a `fatal` message from the page (mermaid.js failed to load or
+  initialize, so `ready` would never come) and a closed window are `Fatal`.
+  Not handled yet: if the WebView's own process dies, no message arrives and
+  `render_stream` keeps waiting.
 - **`html`** (pure, `render/html.rs`): builds what is sent to the WebView —
   the page, and the `renderMermaid(id, ...)` script for each dispatch.
 - **`render_stream`** (impure, `render/mod.rs`): owns the window, WebView and
@@ -177,7 +180,7 @@ spinning up a WebView.
   `RenderOutcome::Error` via `on_result`; the pipeline returns to `Idle` and
   the queue continues draining. `render_stream`'s `Err` (and the CLI's exit 1)
   is reserved for sekien's own failures (reader I/O error, malformed IPC,
-  display init, output write failure).
+  display init, the page failing to load mermaid.js, output write failure).
 
 ### Event loop (tao)
 

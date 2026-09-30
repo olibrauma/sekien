@@ -84,10 +84,12 @@ mod tests {
     }
 
     #[test]
-    fn page_imports_the_bundled_entry() {
+    fn page_imports_the_bundled_entry_and_reports_failure() {
         let html = build_html(None);
-        assert!(html.contains(r#"import mermaid from "./mermaid.esm.min.mjs""#));
+        assert!(html.contains(r#"import("./mermaid.esm.min.mjs")"#));
         assert!(resource("/mermaid.esm.min.mjs", "").is_some());
+        // A failed import or initialize must be reported, not hang (see render.html).
+        assert!(html.contains("type: 'fatal'"));
     }
 
     /// Every relative import (`"./x.mjs"`) in every file must resolve to a
