@@ -85,7 +85,7 @@ then paste a diagram and immediately press `Ctrl+@` — the SVG is written to
 | OS | Requirement |
 |---|---|
 | macOS (Apple Silicon) | Display required (WKWebView) |
-| Windows | **Untested — known issue:** WebView2 creation fails on the GitHub Actions Windows runner, also for 0.4.2 ([#5](https://github.com/olibrauma/sekien/issues/5)). Rendering on a real Windows machine has not been verified. |
+| Windows | Display required (WebView2). Rendering works on the GitHub Actions Windows runner (E2E tests in CI) since 0.5.1; earlier versions failed ([#5](https://github.com/olibrauma/sekien/issues/5)). Not yet tried on a desktop Windows machine. |
 | Linux | Xvfb (launched internally — no session or display needed) |
 
 The bundled mermaid.js 12 targets ES2024, so the OS WebView must be recent

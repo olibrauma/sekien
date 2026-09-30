@@ -6,9 +6,11 @@
 #
 # Downloads mermaid@<version> from the npm registry, verifies the tarball
 # against the registry's sha512 integrity, and then:
-#   - replaces assets/mermaid.min.js with the tarball's dist/mermaid.min.js
+#   - replaces assets/mermaid/ with the tarball's ESM build: the entry
+#     dist/mermaid.esm.min.mjs and its chunks dist/chunks/mermaid.esm.min/
+#     (without source maps), keeping the dist layout so relative imports work
 #   - writes <version> to assets/mermaid.version (read by build.rs)
-#   - rewrites EXPECTED_MERMAID_SHA in build.rs
+#   - rewrites EXPECTED_MERMAID_SHA in build.rs (the manifest hash below)
 #
 # The version is taken from the tarball's package.json rather than parsed out
 # of the minified bundle, which has no stable, structured version marker.
@@ -58,14 +60,23 @@ if [ "$PKG_VERSION" != "$VERSION" ]; then
     exit 1
 fi
 
-cp "$WORK/package/dist/mermaid.min.js" "$REPO_ROOT/assets/mermaid.min.js"
+DEST="$REPO_ROOT/assets/mermaid"
+rm -rf "$DEST"
+mkdir -p "$DEST/chunks/mermaid.esm.min"
+cp "$WORK/package/dist/mermaid.esm.min.mjs" "$DEST/"
+cp "$WORK/package/dist/chunks/mermaid.esm.min/"*.mjs "$DEST/chunks/mermaid.esm.min/"
 printf '%s\n' "$VERSION" > "$REPO_ROOT/assets/mermaid.version"
 
-# Same normalisation as build.rs: hash with \r stripped.
-SHA=$(tr -d '\r' < "$REPO_ROOT/assets/mermaid.min.js" | sha256sum | cut -d' ' -f1)
+# Manifest hash, computed the same way by build.rs: for each file in byte
+# order of its path, "<sha256 of the content with \r stripped>  <path>\n",
+# then the sha256 of all those lines.
+SHA=$(cd "$DEST" && find . -type f -name '*.mjs' | sed 's|^\./||' | LC_ALL=C sort \
+    | while read -r f; do
+        printf '%s  %s\n' "$(tr -d '\r' < "$f" | sha256sum | cut -d' ' -f1)" "$f"
+    done | sha256sum | cut -d' ' -f1)
 sed -i -E "s/^(    \")[0-9a-f]{64}(\";)$/\1$SHA\2/" "$REPO_ROOT/build.rs"
 grep -q "\"$SHA\"" "$REPO_ROOT/build.rs" \
     || { echo "error: failed to update EXPECTED_MERMAID_SHA in build.rs" >&2; exit 1; }
 
 echo "mermaid.js updated to $VERSION" >&2
-echo "  sha256: $SHA" >&2
+echo "  files: $(find "$DEST" -type f -name '*.mjs' | wc -l), manifest sha256: $SHA" >&2

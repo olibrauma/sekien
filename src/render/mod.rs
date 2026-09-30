@@ -43,6 +43,7 @@ pub use collector::RenderOutcome;
 
 use crate::error::{Error, Result};
 use collector::{Action, Collector, Input};
+use std::borrow::Cow;
 use tao::{
     dpi::{LogicalPosition, LogicalSize},
     event::{Event, WindowEvent},
@@ -50,12 +51,16 @@ use tao::{
     platform::run_return::EventLoopExtRunReturn,
     window::{Window, WindowBuilder},
 };
-use wry::{WebView, WebViewBuilder};
+use wry::{
+    http::{header::CONTENT_TYPE, Response},
+    WebView, WebViewBuilder,
+};
 
 #[cfg(target_os = "linux")]
 use crate::linux_display;
 
-/// Version string extracted from `mermaid.min.js` by `build.rs` at compile time.
+/// Version of the bundled mermaid.js (`assets/mermaid.version`, checked against
+/// the bundle by `build.rs`).
 pub const MERMAID_VERSION: &str = env!("MERMAID_VERSION");
 
 fn create_window(event_loop: &EventLoopWindowTarget<Input>) -> Result<Window> {
@@ -78,11 +83,27 @@ fn create_window(event_loop: &EventLoopWindowTarget<Input>) -> Result<Window> {
     Ok(window)
 }
 
-fn create_webview(window: &Window, html: String, proxy: EventLoopProxy<Input>) -> Result<WebView> {
+/// The page and mermaid's ESM files are served from memory by this custom
+/// protocol, so that the page can load mermaid as ES modules: chunks such as
+/// ELK are then only parsed when a diagram needs them (see DESIGN.md). wry
+/// rewrites the URL to `http://sekien.localhost/` on Windows.
+const PROTOCOL: &str = "sekien";
+const PAGE_URL: &str = "sekien://localhost/";
+
+fn create_webview(window: &Window, page: String, proxy: EventLoopProxy<Input>) -> Result<WebView> {
     WebViewBuilder::new()
         .with_background_color((0, 0, 0, 0))
         .with_transparent(true)
-        .with_html(html)
+        .with_custom_protocol(PROTOCOL.into(), move |_, request| {
+            let response = match html::resource(request.uri().path(), &page) {
+                Some((body, content_type)) => Response::builder()
+                    .header(CONTENT_TYPE, content_type)
+                    .body(body),
+                None => Response::builder().status(404).body(Cow::Borrowed(&[][..])),
+            };
+            response.expect("static status and header values are valid")
+        })
+        .with_url(PAGE_URL)
         .with_ipc_handler(move |req| {
             let _ = proxy.send_event(Input::Ipc(req.into_body()));
         })

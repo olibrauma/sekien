@@ -1,5 +1,24 @@
 # Changelog
 
+## [0.5.1] - Unreleased
+
+### Changed
+
+- Faster: rendering one diagram takes about 0.2–0.3 s less than in 0.5.0
+  (e.g. one pie chart 1145 → 836 ms, one flowchart 1557 → 1336 ms on Linux).
+  mermaid.js is now bundled as its ES module build and served to the
+  WebView from memory, so code for a diagram type (e.g. the ELK layout
+  engine) is only loaded when a diagram needs it. Output is unchanged.
+
+### Fixed
+
+- Windows: rendering failed with WebView2 error 0x80070057 ("The parameter
+  is incorrect"), in every earlier version (#5). The page, with mermaid.js
+  inlined, was passed as an HTML string, which WebView2 limits to 2 MB; it
+  is now a small page loaded from a URL. The E2E tests now pass on the
+  GitHub Actions Windows runner and are required in CI. Not yet tried on a
+  desktop Windows machine.
+
 ## [0.5.0] - 2026-09-29
 
 ### Changed

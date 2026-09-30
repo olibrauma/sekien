@@ -227,7 +227,10 @@ Wall time for one invocation is the sum of:
 
 - **Display init**: Linux — Xvfb launch + GTK init; macOS/Windows — OS-native
   WebView init only.
-- **mermaid.js load**: evaluation of the bundled `mermaid.min.js`.
+- **mermaid.js load**: the page imports mermaid's ES module build, served
+  from memory by the `sekien://` custom protocol (`resource` in
+  `render/html.rs`). Only the core is parsed at startup; chunks for a diagram
+  type (e.g. ELK, 1.6 MB) are parsed when a diagram first needs them.
 - **Render**: depends on diagram complexity (tens to hundreds of ms for the
   diagrams in `util/bench/diagrams/`).
 
@@ -237,12 +240,31 @@ cost dominates render cost**. This is the motivation for the `\0`-delimited
 protocol: bundling multiple blocks into one invocation amortises the startup
 overhead.
 
+### Why the ES module build (0.5.1)
+
+Until 0.5.0, sekien inlined mermaid's single-file build (`mermaid.min.js`) into
+the page. mermaid 12 inlines ELK into that file, so every invocation parsed it,
+even for diagrams that never use ELK. mmdc loads the ES module build instead.
+Switching to it (Linux, WebKitGTK 2.54; alternating runs, medians):
+
+| | 0.5.0 (single file) | 0.5.1 (ES modules) |
+|---|---|---|
+| startup only | 1025 ms | 827 ms |
+| one pie chart | 1145 ms | 836 ms |
+| one flowchart | 1557 ms | 1336 ms |
+| 60 mixed diagrams | 6730 ms | 6486 ms |
+
+Output is byte-identical. What remains slower than 0.4 for ELK-laid-out
+diagrams (about +360 ms for the first flowchart, +25% per diagram) comes from
+mermaid 12's defaults (ELK layout, `neo` look) and affects mmdc 12 the same
+way; the config in the 0.5.0 CHANGELOG entry avoids it.
+
 ## Mermaid.js error output
 
 ### What Mermaid.js does on a syntax error
 
 When `mermaid.render()` is called with invalid input, the flow inside the
-bundled `mermaid.min.js` is:
+bundled mermaid.js is:
 
 1. `Sx.fromText(code)` invokes the diagram's parser.
    - **jison-based parsers** (flowchart/graph, sequenceDiagram, classDiagram,
@@ -300,7 +322,7 @@ The current design is intentional: sekien relays `e.message` to stderr, which
 carries the full diagnostic including `--------^` for jison parsers.
 
 The jison runtime template that Mermaid embeds contains a recoverable-error
-branch (`if (Ue.recoverable) this.trace(Fe)`), but searching `mermaid.min.js`
+branch (`if (Ue.recoverable) this.trace(Fe)`), but searching the bundled mermaid.js
 confirms that no Mermaid grammar sets `recoverable: true` anywhere — the branch
 is dead code.  No special handling is needed for it.
 

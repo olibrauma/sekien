@@ -76,10 +76,6 @@ jobs:
         run: cargo build --release --locked
 
       - name: E2E tests
-        # Windows: WebView2 creation fails on this runner, including for
-        # v0.4.2 (#5). Keep running it so the status stays visible, but don't
-        # fail the job until that is resolved.
-        continue-on-error: ${{ runner.os == 'Windows' }}
         shell: bash
         run: bash util/tests/test.sh
         env:
