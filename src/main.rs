@@ -208,6 +208,10 @@ fn render(file: Option<&str>, options: &Options) -> Result<()> {
         None => Box::new(io::stdin()),
     };
 
+    // A reader thread and a channel, rather than an iterator that
+    // render_stream's feeder thread would consume: tried and reverted as the
+    // more complex of the two. The thread only calls read(), never getenv(), so
+    // it does not matter for the set_var issue in src/linux_display.rs.
     let (tx, rx) = mpsc::channel::<String>();
     let reader_thread = thread::spawn(move || {
         read_blocks(reader, |s| {
