@@ -1,6 +1,6 @@
 [package]
 name = "sekien"
-version = "0.5.0"
+version = "0.5.1"
 # Edition 2024 is blocked on src/linux_display.rs setting environment variables
 # (see the "Known issue" section there).
 edition = "2021"
