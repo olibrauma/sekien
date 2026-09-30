@@ -38,16 +38,23 @@
 //!   `gdk_set_allowed_backends`, WebKitGTK settings, tao/wry without `x11`):
 //!   worked with WebKitGTK 2.54 but not 2.50 (child processes still need
 //!   `$DISPLAY`), still printed the AT-SPI warning, and made programs that
-//!   enable tao's `x11` feature elsewhere crash without a display. Rejected.
+//!   enable tao's `x11` feature elsewhere crash without a display. Rejected
+//!   for now; the implementation is kept in `util/archive/env-free-linux/`.
 //! - **The CLI sets the variables** at the start of `main`, before any thread
 //!   exists (sound), and the library requires the host to provide `$DISPLAY`
 //!   (e.g. `xvfb-run`). Sound, but burdens library users. Not adopted yet.
 //! - **Set them only while single-threaded** (`/proc/self/task`): sound, but
 //!   does nothing for hosts that already run threads (e.g. tokio).
 //!
-//! Decision: keep setting the variables (behaviour unchanged from 0.4.2),
+//! Decision: keep setting the variables (behaviour unchanged from 0.4.2) and
 //! document the side effect and its precondition on
-//! [`crate::render_stream`], and revisit together with edition 2024.
+//! [`crate::render_stream`].
+//!
+//! When to revisit: once the minimum supported WebKitGTK no longer needs
+//! `$DISPLAY` in its child processes (2.54 does not, 2.50 does), the API-only
+//! setup becomes the leading option; it also unblocks edition 2024. The
+//! remaining issues listed above (AT-SPI warning, tao's `x11` feature) would
+//! still need an answer.
 //!
 //! ## Xvfb readiness detection
 //!
