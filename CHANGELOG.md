@@ -2,6 +2,14 @@
 
 ## [Unreleased]
 
+### Fixed
+
+- If the page fails to load or initialize mermaid.js (e.g. a WebView too old
+  for its ES2024 code), `render_stream` now returns an error ("page failed to
+  load: ...") and the CLI exits 1. Previously it waited forever with no
+  output. mermaid.js is now imported with `import()`, whose failure the page
+  reports.
+
 ### Changed
 
 - `util/bench/bench.sh` now measures time and memory in separate runs
