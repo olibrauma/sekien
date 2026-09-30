@@ -45,6 +45,9 @@
 //!   (e.g. `xvfb-run`). Sound, but burdens library users. Not adopted yet.
 //! - **Set them only while single-threaded** (`/proc/self/task`): sound, but
 //!   does nothing for hosts that already run threads (e.g. tokio).
+//! - **Filter Mesa's warning out of stderr** instead of `LIBGL_ALWAYS_SOFTWARE`,
+//!   by pointing fd 2 at a pipe while WebKit starts: works, but changes
+//!   process-wide state just as `set_var` does. Rejected.
 //!
 //! Decision: keep setting the variables (behaviour unchanged from 0.4.2) and
 //! document the side effect and its precondition on

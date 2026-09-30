@@ -76,6 +76,27 @@ for f in "${files[@]}"; do cat "$f"; printf '\0'; done \
 The `-0` / `-z` / `RS="\0"` flags in standard Unix tools make this pipeline
 work without any delimiter conversion.
 
+## Versioning
+
+sekien follows `mmdc` (mermaid-cli): it bundles the mermaid.js version that
+the current mermaid-cli release uses, with mermaid's defaults, so mermaid's
+behaviour changes are sekien's too. Breaking ones are documented in the
+CHANGELOG, with a config that restores the previous output where possible.
+
+Version numbers map mermaid's semver onto sekien's. Cargo treats a 0.x minor
+bump as incompatible, so users of e.g. `sekien = "0.4"` keep receiving fixes
+(0.4.3) without mermaid 12's new rendering (0.5.0).
+
+| Change | sekien 0.x | sekien ≥ 1.0 |
+|---|---|---|
+| mermaid patch or minor | patch | patch or minor |
+| mermaid major | minor | major |
+| sekien's own breaking API change | minor | major |
+| sekien fixes and other changes | patch | patch or minor |
+
+Raising `rust-version` only to what the dependencies already require (as in
+0.4.3) is not treated as breaking.
+
 ## Internals
 
 ### Library / CLI split
@@ -182,6 +203,14 @@ the OS requires it — see `EventLoopBuilderExtUnix::with_any_thread`, which
 process's main thread; concurrent work (e.g. the feeder thread that relays
 `diagrams` into the event loop) must happen on other threads.
 
+### Platform dependence
+
+The code is kept platform-independent. OS-specific code exists only where an
+OS WebView needs it and is marked with `cfg(target_os = ...)`; there is no
+platform abstraction layer. The Linux setup (`src/linux_display.rs`) is a
+workaround, expected to shrink or go away (see its "Known issue" section), so
+it stays in one file rather than shaping the rest of the design.
+
 ### Linux display resolution
 
 `ensure_display()` (in `linux_display.rs`) is called at the start of
@@ -257,7 +286,28 @@ Switching to it (Linux, WebKitGTK 2.54; alternating runs, medians):
 Output is byte-identical. What remains slower than 0.4 for ELK-laid-out
 diagrams (about +360 ms for the first flowchart, +25% per diagram) comes from
 mermaid 12's defaults (ELK layout, `neo` look) and affects mmdc 12 the same
-way; the config in the 0.5.0 CHANGELOG entry avoids it.
+way (mmdc 11.14 → 12.0, one diagram per run: pie chart 1410 → 1476 ms,
+flowchart 1388 → 2196 ms); the config in the 0.5.0 CHANGELOG entry avoids it.
+
+Not adopted: hiding the page with `visibility: hidden` to skip painting made no
+measurable difference.
+
+### Measuring
+
+Re-run `util/bench/bench.sh` against the current `mmdc` for every release, and
+update the README figures when they change notably (roughly 10% or more).
+
+Absolute times on a desktop drift by ±30% between sessions with background
+load (browsers, editors), and once led to a wrong conclusion here (a "+0.7 s
+first-render cost" that vanished on an idle machine). So:
+
+- compare within one run, alternating the candidates and swapping which goes
+  first each time (`bench.sh` does this), rather than across runs;
+- measure time and memory in separate runs: sampling RSS slows the process;
+- pause between runs: mmdc's Chromium keeps tearing down after mmdc exits;
+- start on an idle machine (check `/proc/loadavg`) and look at the spread
+  (quartiles), not only the median;
+- measure the binaries users get (release artifacts), not only local builds.
 
 ## Mermaid.js error output
 

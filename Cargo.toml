@@ -4,6 +4,10 @@ version = "0.5.1"
 # Edition 2024 is blocked on src/linux_display.rs setting environment variables
 # (see the "Known issue" section there).
 edition = "2021"
+# 1.88: wry 0.57 and tao 0.37 need 1.85, and transitive dependencies (icu,
+# time) need 1.88. 1.85 also fails in practice: yoke-derive 0.8.3 uses a 1.87
+# API without declaring rust-version, so MSRV-aware resolution still picks it.
+# CI builds and tests with 1.88 (the msrv job).
 rust-version = "1.88"
 description = "Mermaid-to-SVG renderer using OS-native WebView — CLI and Rust library (render_stream)."
 license = "MIT OR Apache-2.0"

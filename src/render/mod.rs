@@ -87,6 +87,10 @@ fn create_window(event_loop: &EventLoopWindowTarget<Input>) -> Result<Window> {
 /// protocol, so that the page can load mermaid as ES modules: chunks such as
 /// ELK are then only parsed when a diagram needs them (see DESIGN.md). wry
 /// rewrites the URL to `http://sekien.localhost/` on Windows.
+///
+/// Do not go back to `with_html` with mermaid inlined: WebView2 rejects HTML
+/// strings over 2 MB (`NavigateToString`) with 0x80070057, which is why no
+/// version before 0.5.1 rendered on Windows (#5).
 const PROTOCOL: &str = "sekien";
 const PAGE_URL: &str = "sekien://localhost/";
 

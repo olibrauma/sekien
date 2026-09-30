@@ -111,6 +111,14 @@ sekien launches its own Xvfb on every run and renders into that virtual display.
 Any existing display (X11 / Wayland / Xwayland) is ignored: sekien points its
 own process's `$DISPLAY` at its Xvfb.
 
+## Versioning
+
+sekien bundles the mermaid.js version used by the current `mmdc`
+(mermaid-cli) and passes mermaid's changes through. While sekien is 0.x, a new
+mermaid major version means a new sekien minor version (e.g. mermaid 12 →
+sekien 0.5); mermaid minor and patch updates are sekien patch releases.
+Details: [DESIGN.md — Versioning](util/docs/DESIGN.md#versioning).
+
 ## vs mmdc
 
 By using the OS-native WebView rather than bundling Chromium, sekien is
