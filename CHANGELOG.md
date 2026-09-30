@@ -1,5 +1,14 @@
 # Changelog
 
+## [Unreleased]
+
+### Changed
+
+- `util/bench/bench.sh` now measures time and memory in separate runs
+  (sampling memory slowed the process down), alternates sekien and mmdc,
+  swapping which goes first, and pauses between runs. README figures updated
+  to sekien 0.5.1 vs mmdc 12.0.0 on Linux.
+
 ## [0.5.1] - 2026-09-30
 
 ### Changed
