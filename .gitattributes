@@ -1,3 +1,6 @@
 # Shell scripts must keep LF line endings on Windows checkouts (CI runs them
 # with Git Bash).
 *.sh text eol=lf
+
+# mermaid.js is embedded byte for byte; never convert its line endings.
+assets/mermaid/** -text

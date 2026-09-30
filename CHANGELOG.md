@@ -1,5 +1,15 @@
 # Changelog
 
+## [0.5.1] - Unreleased
+
+### Changed
+
+- Faster: rendering one diagram takes about 0.2–0.3 s less than in 0.5.0
+  (e.g. one pie chart 1145 → 836 ms, one flowchart 1557 → 1336 ms on Linux).
+  mermaid.js is now bundled as its ES module build and served to the
+  WebView from memory, so code for a diagram type (e.g. the ELK layout
+  engine) is only loaded when a diagram needs it. Output is unchanged.
+
 ## [0.5.0] - 2026-09-29
 
 ### Changed
