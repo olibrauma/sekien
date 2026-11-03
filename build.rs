@@ -8,7 +8,7 @@ use std::path::{Path, PathBuf};
 /// Guards against accidental or malicious modifications.
 /// Rewritten by util/update-mermaid.sh.
 const EXPECTED_MERMAID_SHA: &str =
-    "71d17c484ce177e43637aa04de8d3f914cc428701614cb37ff0e23bbdff2b979";
+    "a29e8e24ed1b59c4ce8199261db8077b7272394b59276fde0ca6f00a9274013d";
 
 fn main() {
     let manifest_dir = PathBuf::from(env::var("CARGO_MANIFEST_DIR").expect("CARGO_MANIFEST_DIR"));

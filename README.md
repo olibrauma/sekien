@@ -125,16 +125,18 @@ By using the OS-native WebView rather than bundling Chromium, sekien is
 significantly lighter than `mmdc`.
 
 - Figures are the median of the 3 diagrams in `util/bench/`, one diagram per
-  invocation, on Linux x86_64 (Fedora 44, WebKitGTK 2.54): sekien 0.5.1 /
-  mmdc 12.0.0 (both mermaid.js 12.0.0). The two run alternately, so the
-  comparison holds; absolute times vary with machine load by about ±30%.
+  invocation, on Linux x86_64 (Fedora 44, WebKitGTK 2.54): sekien 0.5.2 /
+  mmdc 12.2.0 (both mermaid.js 12.2.0). The two run alternately, so the
+  comparison holds, but the machine also runs other work and absolute times
+  vary a lot with its load: the same comparison with 0.5.1 / mmdc 12.0.0
+  gave ~1.5 s / ~2.3 s. Read the figures as rough.
 - Max RSS includes all child processes (Xvfb/WebKit/Chromium) — see `util/bench/bench.sh`
 
 | Metric | sekien | mmdc | Advantage |
 |---|---|---|---|
 | Size | **7.0 MB** (binary) | 1.1 GB (npm packages 449 MB + Chromium 656 MB) | 99% smaller |
-| Speed | **~1.5 s** | ~2.3 s | **34% faster** |
-| Memory (RSS) | **~500 MB** | ~635 MB | **22% less** |
+| Speed | **~0.8 s** | ~1.2 s | **35% faster** |
+| Memory (RSS) | **~495 MB** | ~650 MB | **24% less** |
 
 On macOS (Apple Silicon), measured earlier with sekien 0.3.0 / mmdc 11.14.0
 (mermaid.js 11.14.0) and not re-measured since:
