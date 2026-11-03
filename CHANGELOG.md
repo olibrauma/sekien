@@ -1,5 +1,14 @@
 # Changelog
 
+## [Unreleased]
+
+To be included in the next release; no release is planned for this alone.
+
+### Changed
+
+- `Cargo.lock`: yoke-derive 0.8.3, which is yanked, is updated to 0.8.4.
+  `cargo publish` and `cargo install --locked` no longer warn about it.
+
 ## [0.5.2] - 2026-11-03
 
 ### Changed
