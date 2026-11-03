@@ -1,6 +1,40 @@
 # Changelog
 
-## [Unreleased]
+## [0.5.2] - Unreleased
+
+### Changed
+
+- Bundled mermaid.js updated from 12.0.0 to 12.2.0, matching mermaid-cli
+  12.2.0 (which skipped 12.1.0). Some diagrams render differently:
+  - With the ELK layout (the default), an edge that feeds back into a
+    subgraph is now routed downstream instead of around the subgraph
+    (mermaid's new `elk.orientFeedbackEdges` option, on by default). To keep
+    the previous routing, pass this with `--config`:
+
+    ```json
+    { "elk": { "orientFeedbackEdges": false } }
+    ```
+
+    In our comparison this restored 0.5.1's output byte for byte. The
+    changes below are fixes and cannot be turned off.
+  - Circle and double-circle nodes are sized from their label instead of
+    `minNodeWidth`, so they are smaller.
+  - ELK edge labels sit on their edge (they could be up to 16px off), and an
+    edge end is no longer straightened when that would put a label over
+    another edge.
+  - Class diagram cardinality labels sit beside their relation ends.
+  - Mindmap node labels are centred, and the layout changes.
+  - xychart titles are centred over the plot area, and legends no longer clip.
+
+  Diagram types not listed, e.g. sequence, pie, ER and gitGraph, rendered
+  the same in our comparison. The minimum OS WebView is unchanged.
+
+### Added
+
+- New mermaid syntax and options from mermaid 12.1 and 12.2, e.g.
+  `participant Bob @{ ... }` with a space before `@` in sequence diagrams,
+  `bitOrder` for packet diagrams, and `mindmap.colorBy: depth`. See the
+  [mermaid releases](https://github.com/mermaid-js/mermaid/releases).
 
 ### Fixed
 
@@ -15,7 +49,7 @@
 - `util/bench/bench.sh` now measures time and memory in separate runs
   (sampling memory slowed the process down), alternates sekien and mmdc,
   swapping which goes first, and pauses between runs. README figures updated
-  to sekien 0.5.1 vs mmdc 12.0.0 on Linux.
+  to sekien 0.5.2 vs mmdc 12.2.0 on Linux.
 
 ## [0.5.1] - 2026-09-30
 

@@ -317,9 +317,10 @@ first-render cost" that vanished on an idle machine). So:
 ### What Mermaid.js does on a syntax error
 
 When `mermaid.render()` is called with invalid input, the flow inside the
-bundled mermaid.js is:
+bundled mermaid.js is as follows (checked against 12.2.0; minified names change
+with every release, so they are not given here):
 
-1. `Sx.fromText(code)` invokes the diagram's parser.
+1. `Diagram.fromText(code)` invokes the diagram's parser.
    - **jison-based parsers** (flowchart/graph, sequenceDiagram, classDiagram,
      gantt, and most other diagram types) call `parseError(str, hash)` on
      failure.  The default implementation throws `new Error(str)` where `str` is
@@ -336,16 +337,18 @@ bundled mermaid.js is:
      message is:
      ```
      Parsing failed: Parse error on line N, column M: <token description>
+     Parsing failed: Lexer error on line N, column M: unexpected character: ...
      ```
      No `--------^` pointer is produced.
 
-2. `cvt` (the internal `mermaidAPI.render`) catches the thrown error (`A`),
-   renders a fallback "error" SVG diagram (the red-X icon), then
-   **re-throws** the original error (`if (v) throw v`).  The fallback SVG is
-   rendered but never returned to the caller.
+2. The internal `mermaidAPI.render` catches the thrown error, renders a
+   fallback "error" SVG diagram (the red-X icon; since mermaid 12.1 it also
+   shows the message), then **re-throws** the original error.  The fallback
+   SVG is rendered but never returned to the caller, so it never reaches
+   sekien's stdout.
 
 3. The outer `mermaid.render` wrapper's rejection handler calls
-   `Q.error("Error parsing", u)`.  `Q` is Mermaid's internal logger; with the
+   `log.error("Error parsing", err)` on Mermaid's internal logger; with the
    default log level (`fatal`) this call is a **no-op**.
 
 ### How sekien relays the error
@@ -375,8 +378,8 @@ The current design is intentional: sekien relays `e.message` to stderr, which
 carries the full diagnostic including `--------^` for jison parsers.
 
 The jison runtime template that Mermaid embeds contains a recoverable-error
-branch (`if (Ue.recoverable) this.trace(Fe)`), but searching the bundled mermaid.js
-confirms that no Mermaid grammar sets `recoverable: true` anywhere — the branch
+branch (`if (hash.recoverable) this.trace(str)`), but searching the bundled
+mermaid.js (all of `assets/mermaid/`) confirms that no Mermaid grammar sets `recoverable: true` anywhere — the branch
 is dead code.  No special handling is needed for it.
 
 ## Known downstream dependency conflict
